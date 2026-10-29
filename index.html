@@ -1,0 +1,1023 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<title>Alpha-Beta Arena</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout concept: a game table. The board sits on the left like a table top; a guided control column on the right
+   walks the player through setup, play and the AI's reasoning. Dark-first, with a light theme. */
+:root{
+  --bg:#0a1020; --bg-glow:#16234a; --surface:#111a31; --surface2:#17223f; --line:#263356;
+  --fg:#e9edf9; --muted:#9aa6c6; --accent:#4de6c4; --on-accent:#05221b;
+  --board-a:#3b63f2; --board-b:#2443c6; --board-edge:#172a85;
+  --human:#ff6b55; --ai:#ffc83a; --scrim:rgba(7,11,24,.68);
+  --good:#4de6c4; --bad:#ff8a7a;
+  --s1:#ff6b55; --s2:#ffc83a; --s3:#4de6c4; --s4:#b79cff;
+  --display:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif;
+  --body:'Figtree','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --bg:#eef1fa; --bg-glow:#dbe3fb; --surface:#ffffff; --surface2:#f3f5fc; --line:#d4daee;
+  --fg:#131a33; --muted:#566184; --accent:#0a8f7a; --on-accent:#ffffff;
+  --human:#e8432d; --ai:#f0a500; --scrim:rgba(238,241,250,.8);
+  --good:#0a8f7a; --bad:#c8402d;
+  --s1:#e8432d; --s2:#d99100; --s3:#0a8f7a; --s4:#7a55e0; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#eef1fa; --bg-glow:#dbe3fb; --surface:#ffffff; --surface2:#f3f5fc; --line:#d4daee;
+  --fg:#131a33; --muted:#566184; --accent:#0a8f7a; --on-accent:#ffffff;
+  --human:#e8432d; --ai:#f0a500; --scrim:rgba(238,241,250,.8);
+  --good:#0a8f7a; --bad:#c8402d;
+  --s1:#e8432d; --s2:#d99100; --s3:#0a8f7a; --s4:#7a55e0; color-scheme:light}
+:root[data-theme="dark"]{
+  --bg:#0a1020; --bg-glow:#16234a; --surface:#111a31; --surface2:#17223f; --line:#263356;
+  --fg:#e9edf9; --muted:#9aa6c6; --accent:#4de6c4; --on-accent:#05221b;
+  --human:#ff6b55; --ai:#ffc83a; --scrim:rgba(7,11,24,.68);
+  --good:#4de6c4; --bad:#ff8a7a;
+  --s1:#ff6b55; --s2:#ffc83a; --s3:#4de6c4; --s4:#b79cff; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);background-image:radial-gradient(1100px 520px at 18% -8%,var(--bg-glow),transparent 70%);background-repeat:no-repeat;
+  color:var(--fg);font:15px/1.55 var(--body);margin:0;
+  padding-block:0 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;line-height:1.15;letter-spacing:-.01em}
+p{margin:0}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:18px 14px}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto}
+.brand-mark{width:38px;height:38px;flex:none}
+.brand h1{font-size:1.45rem;font-weight:800}
+.brand small{display:block;font:500 .78rem/1.2 var(--body);color:var(--muted);letter-spacing:.01em}
+nav{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px}
+nav a{padding:8px 16px;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.92rem;white-space:nowrap}
+nav a[aria-current="page"]{background:var(--accent);color:var(--on-accent)}
+nav a:not([aria-current]):hover{color:var(--fg)}
+button:focus-visible,a:focus-visible,[data-col]:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.icon-btn{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center}
+.icon-btn:hover{border-color:var(--accent)}
+.sound-toggle{white-space:nowrap;padding:9px 12px;font-size:.82rem}
+@media(max-width:560px){.top{gap:8px}.sound-toggle{padding:8px 9px;font-size:.75rem}nav a{padding:7px 10px}}
+
+/* generic controls */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px}
+.card h2{font-size:1.15rem;font-weight:700}
+.eyebrow{font:600 .72rem/1 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:10px 16px;font-weight:600;cursor:pointer;display:inline-flex;gap:8px;align-items:center;justify-content:center}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent;padding:13px 20px;font-size:1rem}
+.btn.primary:hover:not(:disabled){filter:brightness(1.07);border-color:transparent}
+kbd{font:600 .75rem var(--mono);background:var(--surface2);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px}
+
+/* play layout */
+.play-grid{display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:900px){.play-grid{grid-template-columns:minmax(0,1fr)}}
+.stage{display:flex;flex-direction:column;gap:12px}
+.statusbar{display:flex;align-items:center;gap:12px;min-height:46px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 14px}
+.statusbar .chip{width:22px;height:22px;border-radius:50%;flex:none}
+.statusbar .msg{font-weight:600;min-width:0}
+.statusbar .count{margin-left:auto;font-size:.82rem;color:var(--muted);white-space:nowrap}
+.chip.p1,.pip.p1{background:var(--human)}
+.chip.p2,.pip.p2{background:var(--ai)}
+.spinner{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--ai);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.board-wrap{position:relative;max-width:640px;width:100%;margin:0 auto}
+#board{display:block;width:100%;height:auto;touch-action:manipulation}
+#board .board-body{fill:url(#boardGrad)}
+#board .rim{fill:none;stroke:rgba(0,0,10,.28);stroke-width:4}
+#board .p1 .base{fill:var(--human)}
+#board .p2 .base{fill:var(--ai)}
+#board .p1 .mark{fill:none;stroke:rgba(0,0,0,.24);stroke-width:5}
+#board .p2 .mark{fill:rgba(0,0,0,.26)}
+#board .gloss{fill:url(#gloss)}
+#board .colhit{fill:transparent;cursor:pointer}
+#board .colhl{fill:#fff;opacity:0;pointer-events:none;transition:opacity .15s}
+#board .colhit:hover+.colhl,#board .col:focus-within .colhl{opacity:.09}
+#board .ghost{opacity:.55;pointer-events:none}
+#board .lbl{font:600 22px var(--mono);fill:var(--muted);text-anchor:middle}
+#board .hintring{fill:none;stroke:var(--accent);stroke-width:7;animation:pulse 1s ease-in-out infinite}
+#board .winring{fill:none;stroke:#fff;stroke-width:7;animation:pulse 1s ease-in-out infinite}
+#board .last{fill:none;stroke:#fff;stroke-width:4;opacity:.85}
+.drop{animation:drop .55s cubic-bezier(.4,.05,.6,1) both}
+@keyframes drop{0%{transform:translateY(var(--dy))}62%{transform:translateY(0)}78%{transform:translateY(-16px)}100%{transform:translateY(0)}}
+@keyframes pulse{50%{opacity:.35}}
+.overlay{position:absolute;inset:0;border-radius:24px;background:var(--scrim);backdrop-filter:blur(3px);display:grid;place-items:center;padding:18px;text-align:center}
+.overlay .box{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px 22px;max-width:360px;display:flex;flex-direction:column;gap:12px;align-items:center;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.overlay h2{font-size:1.5rem;font-weight:800}
+.nextstep{display:flex;gap:10px;align-items:flex-start;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:10px 14px;font-size:.92rem}
+.nextstep b{color:var(--accent);white-space:nowrap}
+.meter{display:flex;flex-direction:column;gap:6px}
+.meter-bar{height:12px;border-radius:99px;overflow:hidden;display:flex;background:var(--line)}
+.meter-bar i{display:block;height:100%;transition:width .5s ease}
+.meter-bar .h{background:var(--human)}
+.meter-bar .a{background:var(--ai)}
+.meter-row{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);gap:10px}
+
+/* side column */
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+.step{display:flex;flex-direction:column;gap:10px}
+.step+.step{margin-top:18px}
+.step-h{display:flex;align-items:center;gap:10px;font-weight:700}
+.num{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font:700 .82rem var(--mono);flex:none}
+.levels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.level{position:relative;text-align:left;border:1.5px solid var(--line);background:var(--surface2);border-radius:14px;padding:11px 12px;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0}
+.level:hover{border-color:var(--muted)}
+.level[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.level b{font-family:var(--display);font-size:1.02rem}
+.level .tag{font:500 .72rem var(--mono);color:var(--accent)}
+.level .d{font-size:.8rem;color:var(--muted);line-height:1.35}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{display:flex;align-items:center;gap:10px;justify-content:center;border:1.5px solid var(--line);background:var(--surface2);border-radius:12px;padding:11px;cursor:pointer;font-weight:600}
+.seg button[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.pip{width:16px;height:16px;border-radius:50%;display:inline-block;flex:none}
+.custom{display:grid;gap:12px;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:14px}
+.custom label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:.9rem}
+.custom input[type=range]{flex:1;accent-color:var(--accent);min-width:80px}
+.custom select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.custom input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.toggles{display:grid;gap:10px}
+.playing-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 12px}
+.tagpill{font:600 .75rem var(--mono);border:1px solid var(--line);border-radius:99px;padding:3px 10px;color:var(--muted)}
+.how-list{margin:0 0 14px;padding-left:20px;display:grid;gap:6px}
+.how-list li::marker{color:var(--accent);font-weight:700}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* why card */
+.why-empty{display:grid;gap:10px;color:var(--muted)}
+.why h3{font-size:1.35rem;font-weight:800}
+.why .sub{font-size:.85rem;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0}
+.stat{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:9px 10px;min-width:0}
+.stat b{display:block;font:600 1.05rem var(--mono);overflow-wrap:anywhere}
+.stat span{font-size:.7rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+@media (max-width:520px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.reasons{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.reasons li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;font-size:.93rem}
+.reasons li i{width:22px;height:22px;border-radius:7px;background:var(--surface2);border:1px solid var(--line);display:grid;place-items:center;font:700 .7rem var(--mono);font-style:normal;color:var(--accent)}
+.slip{background:color-mix(in srgb,var(--ai) 16%,transparent);border:1px solid var(--ai);border-radius:12px;padding:10px 12px;font-size:.9rem;margin-bottom:12px}
+.subhead{margin:16px 0 8px;font:600 .72rem var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.pv{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pv span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:700 .8rem var(--mono);color:#12162a}
+.pv .p1{background:var(--human)}.pv .p2{background:var(--ai)}
+.pv em{font-style:normal;color:var(--muted);font-size:.8rem}
+.bars{display:grid;gap:5px}
+.bar{display:grid;grid-template-columns:44px minmax(0,1fr) 62px;align-items:center;gap:8px;font-size:.82rem}
+.bar .track{height:14px;background:var(--surface2);border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+.bar .fill{display:block;height:100%;background:var(--muted);opacity:.55;border-radius:6px}
+.bar.best .fill{background:var(--accent);opacity:1}
+.bar.best{font-weight:700}
+.bar.full{opacity:.4}
+.bar .v{text-align:right;font-family:var(--mono);font-size:.78rem}
+.evtab{width:100%;border-collapse:collapse;font-size:.88rem}
+.evtab th,.evtab td{padding:5px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.evtab th:first-child,.evtab td:first-child{text-align:left}
+.evtab th{font-weight:600;color:var(--muted);font-size:.74rem;letter-spacing:.05em;text-transform:uppercase}
+.note{font-size:.8rem;color:var(--muted)}
+
+/* lab */
+.page-h{display:grid;gap:8px;margin:12px 0 18px;max-width:760px}
+.page-h h2{font-size:clamp(1.6rem,4vw,2.3rem);font-weight:800}
+.lab-controls{display:flex;flex-wrap:wrap;gap:16px 22px;align-items:flex-end}
+.field{display:grid;gap:6px;font-size:.85rem;color:var(--muted)}
+.field select,.field input[type=range]{min-width:170px}
+.field select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;color:var(--fg)}
+.field input[type=range]{accent-color:var(--accent)}
+.progress{height:8px;background:var(--line);border-radius:9px;overflow:hidden;margin-top:14px}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.table-scroll{overflow-x:auto;margin-top:6px}
+.lab-table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:620px}
+.lab-table th,.lab-table td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.lab-table th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;vertical-align:bottom}
+.lab-table th:first-child,.lab-table td:first-child{text-align:left}
+.lab-table small{display:block;color:var(--muted);font-size:.72rem}
+.lab-table .win{color:var(--accent);font-weight:700}
+.lab-grid{display:grid;gap:16px;margin-top:16px}
+.insights{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+.insight{background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:4px}
+.insight b{font:700 1.7rem var(--display);color:var(--accent)}
+.insight span{font-size:.86rem;color:var(--muted)}
+.chart{width:100%;height:auto;display:block}
+.chart text{font:500 11px var(--mono);fill:var(--muted)}
+.chart .gl{stroke:var(--line);stroke-width:1}
+.chart .lab{font:600 11px var(--body)}
+.duel-list{display:grid;gap:6px;margin-top:12px;font-size:.88rem}
+.duel-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface2);border:1px solid var(--line);border-radius:10px}
+.scorebig{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}
+.scorebig div{display:grid;gap:2px}
+.scorebig b{font:700 2rem var(--display)}
+
+/* how */
+.how-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+.how-grid .card{display:grid;gap:10px;align-content:start}
+.how-grid h3{font-size:1.1rem}
+.how-grid p,.how-grid li{font-size:.92rem;color:var(--muted)}
+.how-grid ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.code{font:500 .8rem/1.5 var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;white-space:pre;color:var(--fg)}
+.lvl-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.lvl-table th,.lvl-table td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+.lvl-table th{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+footer{margin-top:34px;color:var(--muted);font-size:.8rem}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="1" y="1" width="38" height="38" rx="11" fill="#2443c6"/>
+        <circle cx="12" cy="12" r="5" fill="#ff6b55"/><circle cx="28" cy="12" r="5" fill="#0b1230" opacity=".55"/>
+        <circle cx="12" cy="28" r="5" fill="#0b1230" opacity=".55"/><circle cx="28" cy="28" r="5" fill="#ffc83a"/>
+        <circle cx="20" cy="20" r="5" fill="#ffc83a"/>
+      </svg>
+      <div><h1>Alpha-Beta Arena</h1><small>Connect Four against a Minimax engine</small></div>
+    </div>
+    <nav aria-label="Sections">
+      <a href="#play" data-tab="play">Play</a>
+      <a href="#lab" data-tab="lab">Engine Lab</a>
+      <a href="#how" data-tab="how">How it works</a>
+    </nav>
+    <button class="icon-btn" id="themeBtn" aria-label="Switch light or dark theme" title="Switch theme">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <button class="btn sound-toggle" id="soundBtn" type="button" aria-pressed="false" title="Enable or disable game sounds">Sound: Off</button>
+  </header>
+
+  <!-- ============ PLAY ============ -->
+  <section id="view-play" aria-label="Play">
+    <div class="play-grid">
+      <div class="stage">
+        <div class="statusbar" role="status" aria-live="polite" id="status"></div>
+        <div class="board-wrap">
+          <svg id="board" viewBox="0 -90 700 740" role="group" aria-label="Connect Four board, 7 columns by 6 rows"></svg>
+          <div class="overlay" id="overlay" hidden></div>
+        </div>
+        <div class="nextstep" id="nextstep"></div>
+        <div class="meter" aria-label="Engine outlook">
+          <div class="meter-row"><span><b style="color:var(--human)">You</b></span><span id="meterLabel">Engine outlook appears after its first move</span><span><b style="color:var(--ai)">AI</b></span></div>
+          <div class="meter-bar"><i class="h" id="meterH" style="width:50%"></i><i class="a" id="meterA" style="width:50%"></i></div>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="card" id="panelSetup">
+          <h2>Set up your game</h2>
+          <p class="muted" style="margin:4px 0 16px">You play coral. The AI plays gold. First to line up four wins.</p>
+          <div class="step">
+            <div class="step-h"><span class="num">1</span>Choose a difficulty</div>
+            <div class="levels" id="levels" role="radiogroup" aria-label="Difficulty"></div>
+            <div class="custom" id="customBox" hidden>
+              <label for="cDepth"><span>Search depth <b class="mono" id="cDepthV">6</b> plies</span><input type="range" id="cDepth" min="1" max="8" value="6"></label>
+              <div class="toggles">
+                <label for="cAb"><span>Alpha-beta pruning</span><input type="checkbox" id="cAb" checked></label>
+                <label for="cOrder"><span>Move ordering (wins, blocks, centre)</span><input type="checkbox" id="cOrder" checked></label>
+                <label for="cId"><span>Iterative deepening (1.5 s budget)</span><input type="checkbox" id="cId"></label>
+              </div>
+              <label for="cEval"><span>Evaluation</span><select id="cEval"><option value="adv">Advanced</option><option value="basic">Basic</option></select></label>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-h"><span class="num">2</span>Who moves first?</div>
+            <div class="seg" id="firstSeg" role="radiogroup" aria-label="First move">
+              <button type="button" role="radio" aria-checked="true" data-first="human"><span class="pip p1"></span>You</button>
+              <button type="button" role="radio" aria-checked="false" data-first="ai"><span class="pip p2"></span>The AI</button>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-h"><span class="num">3</span>Start</div>
+            <button class="btn primary" id="startBtn" type="button">Start game</button>
+          </div>
+        </div>
+
+        <div class="card" id="panelGame" hidden>
+          <h2>Game in progress</h2>
+          <div class="playing-meta"><span class="tagpill" id="metaLevel"></span><span class="tagpill" id="metaFirst"></span></div>
+          <ol class="how-list">
+            <li>Click a column, or press <kbd>1</kbd> to <kbd>7</kbd>, to drop a coral disc.</li>
+            <li>The AI answers. Its reasoning appears below under "Why this move?".</li>
+            <li>Stuck? Ask for a hint, or take your last move back.</li>
+          </ol>
+          <div class="btnrow">
+            <button class="btn" id="hintBtn" type="button">Hint <kbd>H</kbd></button>
+            <button class="btn" id="undoBtn" type="button">Undo <kbd>U</kbd></button>
+            <button class="btn" id="newBtn" type="button">New game</button>
+          </div>
+        </div>
+
+        <div class="card why" id="why" aria-live="polite"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ LAB ============ -->
+  <section id="view-lab" hidden aria-label="Engine Lab">
+    <div class="page-h">
+      <p class="eyebrow">Experiments</p>
+      <h2>Engine Lab</h2>
+      <p class="muted">Run the same position through four versions of the search and count the positions each one examines. The more branches it can skip, the deeper it can look in the same time.</p>
+    </div>
+    <div class="card">
+      <h3 style="font-size:1.1rem;margin-bottom:12px">Experiment 1 · Pruning and move ordering</h3>
+      <div class="lab-controls">
+        <label class="field">Starting position
+          <select id="labPos"><option value="mid">Midgame sample (8 discs)</option><option value="empty">Empty board</option><option value="cur">Current game position</option></select>
+        </label>
+        <label class="field"><span>Max depth: <b class="mono" id="labDepthV" style="color:var(--fg)">6</b> plies</span>
+          <input type="range" id="labDepth" min="2" max="8" value="6">
+        </label>
+        <label class="field">Evaluation
+          <select id="labEval"><option value="adv">Advanced</option><option value="basic">Basic</option></select>
+        </label>
+        <button class="btn primary" id="labRun" type="button">Run experiment</button>
+      </div>
+      <p class="note" style="margin-top:10px">Plain minimax runs up to depth 6 only, because beyond that it takes minutes. Everything runs in your browser.</p>
+      <div class="progress" hidden id="labProg"><i></i></div>
+      <div id="labOut" class="lab-grid"></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:1.1rem;margin-bottom:6px">Experiment 2 · Which evaluation function plays better?</h3>
+      <p class="muted" style="margin-bottom:12px">Two identical engines play each other at the same depth. One uses the basic evaluation, the other the advanced one. Each of 4 random openings is played twice with colours swapped.</p>
+      <div class="lab-controls">
+        <label class="field"><span>Depth: <b class="mono" id="duelDepthV" style="color:var(--fg)">4</b> plies</span>
+          <input type="range" id="duelDepth" min="2" max="6" value="4">
+        </label>
+        <button class="btn primary" id="duelRun" type="button">Play 8 games</button>
+      </div>
+      <div class="progress" hidden id="duelProg"><i></i></div>
+      <div id="duelOut"></div>
+    </div>
+  </section>
+
+  <!-- ============ HOW ============ -->
+  <section id="view-how" hidden aria-label="How it works">
+    <div class="page-h">
+      <p class="eyebrow">Under the hood</p>
+      <h2>How the engine thinks</h2>
+      <p class="muted">A ply is one player's move. "Depth 6" means the engine looks three moves ahead for itself and three replies for you.</p>
+    </div>
+    <div class="how-grid">
+      <div class="card"><h3>Minimax</h3>
+        <p>The engine builds a tree of future positions. At its own turn it picks the child with the highest score, at your turn it assumes you pick the lowest. Scores bubble up to the root. This implementation uses the negamax form: one function, with the sign flipped at every ply.</p>
+        <div class="code">score(pos) = max over moves of  −score(child)</div></div>
+      <div class="card"><h3>Alpha-beta pruning</h3>
+        <p>Alpha is the best score the engine can already guarantee. Beta is the best score the opponent can already guarantee. When a branch scores at least beta, the opponent would never allow it, so the remaining siblings are skipped. The answer is identical to minimax, found by looking at far fewer positions.</p>
+        <div class="code">if alpha ≥ beta: cut off, skip the rest</div></div>
+      <div class="card"><h3>Move ordering</h3>
+        <p>Pruning works best when the best move is searched first. The engine tries immediate wins first, then forced blocks, then moves that caused cutoffs earlier (the history heuristic), with a bias toward the centre columns. Perfect ordering can shrink the tree from about b<sup>d</sup> toward b<sup>d/2</sup>.</p></div>
+      <div class="card"><h3>Iterative deepening</h3>
+        <p>Search to depth 1, then 2, then 3, and so on until time runs out. Early passes are cheap. Each pass finds a best move that is searched first on the next pass, which improves pruning. It also means the engine always has an answer ready, so it can obey a time limit.</p></div>
+      <div class="card"><h3>Evaluation functions</h3>
+        <p>When the search stops before the game ends, a leaf position needs a score.</p>
+        <ul>
+          <li><b>Basic:</b> each square has a weight equal to how many four-in-a-row lines pass through it. Centre squares are worth the most. Score = your weights minus the opponent's.</li>
+          <li><b>Advanced:</b> looks at all 69 possible lines of four. Open threes score +50 (−55 for the opponent's, so it defends first), open pairs +6, and centre-column discs +6 each.</li>
+        </ul></div>
+      <div class="card"><h3>Reading "Why this move?"</h3>
+        <ul>
+          <li><b>Alternatives:</b> alpha-beta only proves that other moves are no better than the best one, so they show as "≤ score".</li>
+          <li><b>Expected line:</b> the principal variation, the sequence both sides play if both play best.</li>
+          <li><b>Position table:</b> the evaluation features measured after the chosen move.</li>
+          <li><b>Win in N:</b> a score near ±100000 means the search proved a forced result.</li>
+        </ul></div>
+      <div class="card" style="grid-column:1/-1"><h3>Difficulty levels</h3>
+        <div class="table-scroll"><table class="lvl-table" id="lvlTable"></table></div></div>
+    </div>
+  </section>
+  <footer>Built with plain JavaScript. The engine runs in a background worker so the board never freezes.</footer>
+</div>
+
+<!-- ================= ENGINE (runs in a Web Worker, or inline as a fallback) ================= -->
+<script id="engine">
+const Engine=(function(){
+const R=6,C=7,N=42,WIN=100000,INF=1e9;
+const CENTER=[3,2,4,1,5,0,6],NATURAL=[0,1,2,3,4,5,6];
+const WTS=[3,4,5,7,5,4,3, 4,6,8,10,8,6,4, 5,8,11,13,11,8,5, 5,8,11,13,11,8,5, 4,6,8,10,8,6,4, 3,4,5,7,5,4,3];
+const DIRS=[[0,1],[1,0],[1,1],[1,-1]];
+const WINS=[];
+for(let r=0;r<R;r++)for(let c=0;c<C;c++)for(const d of DIRS){
+  const er=r+3*d[0],ec=c+3*d[1]; if(er<0||er>=R||ec<0||ec>=C||ec<0)continue;
+  WINS.push([r*C+c,(r+d[0])*C+c+d[1],(r+2*d[0])*C+c+2*d[1],er*C+ec]);
+}
+function winAt(b,idx,p){
+  const r=(idx/C)|0,c=idx%C;
+  for(let d=0;d<4;d++){
+    const dr=DIRS[d][0],dc=DIRS[d][1];let n=1;
+    for(let k=1;k<4;k++){const rr=r+dr*k,cc=c+dc*k;if(rr<0||rr>=R||cc<0||cc>=C||b[rr*C+cc]!==p)break;n++;}
+    for(let k=1;k<4;k++){const rr=r-dr*k,cc=c-dc*k;if(rr<0||rr>=R||cc<0||cc>=C||b[rr*C+cc]!==p)break;n++;}
+    if(n>=4)return true;
+  }
+  return false;
+}
+function evalBasic(b,p){let s=0;for(let i=0;i<N;i++){const v=b[i];if(v===p)s+=WTS[i];else if(v)s-=WTS[i];}return s;}
+function evalAdv(b,p){
+  let s=0;
+  for(let r=0;r<R;r++){const v=b[r*C+3];if(v===p)s+=6;else if(v)s-=6;}
+  for(let i=0;i<69;i++){
+    const w=WINS[i];let m=0,t=0;
+    for(let k=0;k<4;k++){const v=b[w[k]];if(v===p)m++;else if(v)t++;}
+    if(m&&t)continue;
+    if(m===3)s+=50;else if(m===2)s+=6;
+    if(t===3)s-=55;else if(t===2)s-=6;
+  }
+  return s;
+}
+function breakdown(b,p){
+  const q=3-p;let cm=0,ct=0,t3m=0,t3t=0,t2m=0,t2t=0;
+  for(let r=0;r<R;r++){const v=b[r*C+3];if(v===p)cm++;else if(v===q)ct++;}
+  for(const w of WINS){let m=0,t=0;for(let k=0;k<4;k++){const v=b[w[k]];if(v===p)m++;else if(v===q)t++;}
+    if(m&&t)continue;if(m===3)t3m++;else if(m===2)t2m++;if(t===3)t3t++;else if(t===2)t2t++;}
+  return{cm,ct,t3m,t3t,t2m,t2t};
+}
+function think(cells,player,cfg){
+  const t0=performance.now();
+  const b=Int8Array.from(cells),h=new Int8Array(C);let moves=0;
+  for(let i=0;i<N;i++)if(b[i]){moves++;const c=i%C,r=((i/C)|0)+1;if(r>h[c])h[c]=r;}
+  const evalFn=cfg.eval==='basic'?evalBasic:evalAdv;
+  const order=cfg.order==='none'?NATURAL:CENTER;
+  const smart=cfg.order==='smart';
+  const hist=new Float64Array(C);
+  const ab=!!cfg.ab;
+  function legalOrder(){const mv=[];for(let i=0;i<C;i++){const c=order[i];if(h[c]<R)mv.push(c);}return mv;}
+  // smart ordering: immediate wins, then forced blocks, then history score, then centre bias
+  function smartOrder(p,q,ply){
+    const mv=[],key=[];
+    for(let c=0;c<C;c++){if(h[c]>=R)continue;const idx=h[c]*C+c;let k=hist[c]*8+(3-Math.abs(c-3))*2;
+      b[idx]=p;if(winAt(b,idx,p))k+=1e9;else{b[idx]=q;if(winAt(b,idx,q))k+=1e8;}b[idx]=0;
+      mv.push(c);key[c]=k;}
+    mv.sort((a,d)=>key[d]-key[a]);return mv;
+  }
+  let nodes=0,leaves=0,pruned=0,cutoffs=0,aborted=false;
+  const deadline=cfg.timeMs?t0+cfg.timeMs:0;
+  const pvs=[];
+  const q0=3-player;
+  function nega(depth,alpha,beta,p,ply){
+    pvs[ply]=[];
+    if(moves===N)return 0;
+    if(depth===0){leaves++;return evalFn(b,p);}
+    const q=3-p;let best=-INF;
+    const mv=smart?smartOrder(p,q,ply):legalOrder();
+    for(let i=0;i<mv.length;i++){
+      const c=mv[i],idx=h[c]*C+c;
+      b[idx]=p;h[c]++;moves++;nodes++;
+      if(deadline&&(nodes&2047)===0&&performance.now()>deadline)aborted=true;
+      let v;
+      if(winAt(b,idx,p)){v=WIN-ply;pvs[ply+1]=[];}
+      else v=-nega(depth-1,-beta,-alpha,q,ply+1);
+      b[idx]=0;h[c]--;moves--;
+      if(aborted)return 0;
+      if(v>best){best=v;pvs[ply]=[c].concat(pvs[ply+1]||[]);}
+      if(ab){
+        if(v>alpha)alpha=v;
+        if(alpha>=beta){cutoffs++;pruned+=mv.length-i-1;if(smart)hist[c]+=depth*depth;break;}
+      }
+    }
+    return best;
+  }
+  function root(depth,first){
+    let alpha=-INF,beta=INF,best=-INF,bestMove=-1,pv=[];
+    const mv=smart?smartOrder(player,q0,0):legalOrder();
+    if(first!==undefined&&first>=0){const k=mv.indexOf(first);if(k>0){mv.splice(k,1);mv.unshift(first);}}
+    const scores=new Array(C).fill(null);
+    for(let i=0;i<mv.length;i++){
+      const c=mv[i],idx=h[c]*C+c;
+      b[idx]=player;h[c]++;moves++;nodes++;
+      let v;
+      if(winAt(b,idx,player)){v=WIN;pvs[1]=[];}
+      else v=-nega(depth-1,-beta,-alpha,q0,1);
+      b[idx]=0;h[c]--;moves--;
+      if(aborted)return null;
+      scores[c]={v:v,exact:!ab||v>alpha};
+      if(v>best){best=v;bestMove=c;pv=[c].concat(pvs[1]||[]);}
+      if(ab&&v>alpha)alpha=v;
+    }
+    return{best:best,bestMove:bestMove,scores:scores,pv:pv};
+  }
+  // tactics at the root
+  const wins=[],threats=[];
+  for(let c=0;c<C;c++){if(h[c]>=R)continue;const idx=h[c]*C+c;
+    b[idx]=player;if(winAt(b,idx,player))wins.push(c);
+    b[idx]=q0;if(winAt(b,idx,q0))threats.push(c);b[idx]=0;}
+  const maxD=cfg.depth,startD=cfg.id?1:maxD;
+  const iters=[];let res=null,first,timedOut=false;
+  for(let d=startD;d<=maxD;d++){
+    const n0=nodes,ti=performance.now();
+    const r=root(d,cfg.id?first:undefined);
+    if(!r){timedOut=true;break;}
+    res=r;res.depth=d;first=r.bestMove;
+    iters.push({d:d,nodes:nodes-n0,ms:Math.round(performance.now()-ti),move:r.bestMove,score:r.best});
+    if(!cfg.full&&Math.abs(r.best)>=WIN-100)break;
+    if(moves+d>=N&&!cfg.full&&d>=N-moves)break;
+  }
+  if(!res){res={best:0,bestMove:-1,scores:new Array(C).fill(null),pv:[],depth:0};
+    for(const c of CENTER)if(h[c]<R){res.bestMove=c;break;}}
+  const after=Int8Array.from(b);
+  if(res.bestMove>=0){after[h[res.bestMove]*C+res.bestMove]=player;}
+  return{move:res.bestMove,score:res.best,depth:res.depth,pv:res.pv,rootScores:res.scores,
+    nodes:nodes,leaves:leaves,pruned:pruned,cutoffs:cutoffs,ms:Math.round(performance.now()-t0),
+    iters:iters,timedOut:timedOut,tactics:{wins:wins,threats:threats},after:breakdown(after,player),cfg:cfg};
+}
+function handle(m){
+  if(m.type==='ping')return{id:m.id,pong:true};
+  if(m.type==='search'){const r=think(m.cells,m.player,m.cfg);r.id=m.id;return r;}
+  return{id:m.id};
+}
+return{handle:handle,think:think};
+})();
+</script>
+
+<!-- ================= APP ================= -->
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>Math.round(n).toLocaleString('en-US');
+const HUMAN=1,AI=2,WIN=100000;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+/* ---------- browser-generated sound effects ---------- */
+let audioCtx=null,soundEnabled=false;
+function enableAudio(){
+  const Ctx=window.AudioContext||window.webkitAudioContext;
+  if(!Ctx)return false;
+  try{if(!audioCtx)audioCtx=new Ctx();if(audioCtx.state==='suspended')audioCtx.resume();return true;}catch(e){return false;}
+}
+function tone(freq,delay,duration,shape='sine',volume=.045){
+  if(!soundEnabled||!enableAudio())return;
+  const t=audioCtx.currentTime+delay,osc=audioCtx.createOscillator(),gain=audioCtx.createGain();
+  osc.type=shape;osc.frequency.setValueAtTime(freq,t);
+  gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(volume,t+.012);
+  gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
+  osc.connect(gain);gain.connect(audioCtx.destination);osc.start(t);osc.stop(t+duration+.025);
+}
+function playSound(kind){
+  if(!soundEnabled)return;
+  if(kind==='drop'){tone(230,0,.09,'triangle',.055);tone(155,.025,.11,'sine',.025);}
+  else if(kind==='win'){[523,659,784,1047].forEach((f,i)=>tone(f,i*.11,.22,'sine',.055));}
+  else if(kind==='lose'){[392,330,262].forEach((f,i)=>tone(f,i*.14,.2,'triangle',.04));}
+  else if(kind==='click'){tone(660,0,.055,'sine',.025);}
+}
+
+/* ---------- engine plumbing ---------- */
+let worker=null,reqId=0,useLocal=false,alive=false;const pending=new Map();
+function runLocal(p){setTimeout(()=>p.res(Engine.handle(p.msg)),15);}
+function fallbackAll(){useLocal=true;worker=null;const items=[...pending.values()];pending.clear();items.forEach(runLocal);}
+function startWorker(){
+  try{
+    const src=document.getElementById('engine').textContent+"\nonmessage=function(e){postMessage(Engine.handle(e.data));};";
+    worker=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})));
+    worker.onmessage=e=>{alive=true;const p=pending.get(e.data.id);if(p){pending.delete(e.data.id);p.res(e.data);}};
+    worker.onerror=()=>fallbackAll();
+    ask({type:'ping'});
+    setTimeout(()=>{if(!alive)fallbackAll();},2500);
+  }catch(e){useLocal=true;worker=null;}
+}
+function ask(msg){
+  msg.id=++reqId;
+  return new Promise(res=>{const p={res,msg};
+    if(useLocal||!worker){runLocal(p);return;}
+    pending.set(msg.id,p);worker.postMessage(msg);});
+}
+
+/* ---------- board helpers ---------- */
+const rowOf=(cells,c)=>{let n=0;for(let r=0;r<6;r++)if(cells[r*7+c])n++;return n;};
+const legal=cells=>[0,1,2,3,4,5,6].filter(c=>rowOf(cells,c)<6);
+function winLine(cells,idx,p){
+  const r=(idx/7)|0,c=idx%7;
+  for(const [dr,dc] of [[0,1],[1,0],[1,1],[1,-1]]){
+    const line=[idx];
+    for(let k=1;k<7;k++){const rr=r+dr*k,cc=c+dc*k;if(rr<0||rr>5||cc<0||cc>6||cells[rr*7+cc]!==p)break;line.push(rr*7+cc);}
+    for(let k=1;k<7;k++){const rr=r-dr*k,cc=c-dc*k;if(rr<0||rr>5||cc<0||cc>6||cells[rr*7+cc]!==p)break;line.push(rr*7+cc);}
+    if(line.length>=4)return line;
+  }
+  return null;
+}
+
+/* ---------- difficulty levels ---------- */
+const LEVELS={
+  rookie:{name:'Rookie',tag:'2 plies · basic eval',desc:'Sees one reply ahead and plays a random move 3 times in 10.',slip:.3,
+    cfg:{depth:2,ab:true,order:'smart',id:false,eval:'basic'}},
+  casual:{name:'Casual',tag:'4 plies · basic eval',desc:'Spots short tactics but misses long plans.',slip:0,
+    cfg:{depth:4,ab:true,order:'smart',id:false,eval:'basic'}},
+  skilled:{name:'Skilled',tag:'6 plies · full eval',desc:'Solid. Sets traps three moves deep.',slip:0,
+    cfg:{depth:6,ab:true,order:'smart',id:false,eval:'adv'}},
+  master:{name:'Master',tag:'iterative · 1.2 s',desc:'Searches as deep as 1.2 seconds allows.',slip:0,
+    cfg:{depth:14,ab:true,order:'smart',id:true,timeMs:1200,eval:'adv'}},
+  grand:{name:'Grandmaster',tag:'iterative · 3 s',desc:'Deepest search. Expect forced wins to be found early.',slip:0,
+    cfg:{depth:20,ab:true,order:'smart',id:true,timeMs:3000,eval:'adv'}},
+  custom:{name:'Custom',tag:'your own engine',desc:'Switch pruning, ordering and evaluation on or off.',slip:0,cfg:null}
+};
+const HINT_CFG={depth:12,ab:true,order:'smart',id:true,timeMs:900,eval:'adv'};
+
+/* ---------- state ---------- */
+const S={phase:'setup',level:'skilled',first:'human',cells:new Array(42).fill(0),turn:HUMAN,history:[],busy:false,
+  over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0};
+function customCfg(){
+  const id=$('#cId').checked;
+  return{depth:+$('#cDepth').value,ab:$('#cAb').checked,order:$('#cOrder').checked?'smart':'none',id,timeMs:id?1500:0,eval:$('#cEval').value};
+}
+function levelCfg(key){return key==='custom'?customCfg():LEVELS[key].cfg;}
+
+/* ---------- board svg ---------- */
+const svg=$('#board');
+function buildBoard(){
+  let holes='',rims='',cols='',labels='';
+  for(let r=0;r<6;r++)for(let c=0;c<7;c++){
+    holes+=`<circle cx="${c*100+50}" cy="${r*100+50}" r="42" fill="#000"/>`;
+    rims+=`<circle class="rim" cx="${c*100+50}" cy="${r*100+50}" r="42"/>`;
+  }
+  for(let c=0;c<7;c++){
+    cols+=`<g class="col" role="button" tabindex="0" aria-label="Drop a disc in column ${c+1}" data-col="${c}">
+      <rect class="colhit" x="${c*100}" y="-90" width="100" height="690" data-col="${c}"/>
+      <rect class="colhl" x="${c*100+4}" y="0" width="92" height="600" rx="12"/></g>`;
+    labels+=`<text class="lbl" x="${c*100+50}" y="640">${c+1}</text>`;
+  }
+  svg.innerHTML=`<defs>
+    <linearGradient id="boardGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--board-a)"/><stop offset="1" stop-color="var(--board-b)"/></linearGradient>
+    <radialGradient id="gloss" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <mask id="holes"><rect x="0" y="0" width="700" height="600" fill="#fff"/>${holes}</mask></defs>
+    <g id="discs"></g>
+    <rect x="-10" y="-10" width="720" height="620" rx="30" fill="var(--board-edge)" mask="url(#holes)" opacity="0"/>
+    <rect class="board-body" x="0" y="0" width="700" height="600" rx="26" mask="url(#holes)"/>
+    <g>${rims}</g>
+    <g id="marks"></g>
+    <g id="ghost" class="ghost"></g>
+    <g>${cols}</g>${labels}`;
+  svg.addEventListener('click',e=>{const c=e.target.closest('[data-col]');if(c)onColumn(+c.dataset.col);});
+  svg.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){const c=e.target.closest('[data-col]');if(c){e.preventDefault();onColumn(+c.dataset.col);}}});
+  svg.addEventListener('mouseover',e=>{const c=e.target.closest('[data-col]');S.hover=c?+c.dataset.col:-1;drawGhost();});
+  svg.addEventListener('mouseleave',()=>{S.hover=-1;drawGhost();});
+}
+function discSVG(p,cx,cy,cls,extra){
+  return `<g class="${'p'+p} ${cls||''}" ${extra||''}><circle class="base" cx="${cx}" cy="${cy}" r="42"/>${
+    p===1?`<circle class="mark" cx="${cx}" cy="${cy}" r="27"/>`:`<circle class="mark" cx="${cx}" cy="${cy}" r="10"/>`}<circle class="gloss" cx="${cx}" cy="${cy}" r="42"/></g>`;
+}
+function drawGhost(){
+  const g=$('#ghost');
+  if(S.phase==='playing'&&S.turn===HUMAN&&!S.busy&&!S.over&&S.hover>=0&&rowOf(S.cells,S.hover)<6)
+    g.innerHTML=discSVG(HUMAN,S.hover*100+50,-45);
+  else g.innerHTML='';
+}
+function renderDiscs(){
+  let html='';
+  for(let i=0;i<42;i++){const v=S.cells[i];if(!v)continue;
+    const r=(i/7)|0,c=i%7,cx=c*100+50,cy=(5-r)*100+50;
+    html+=i===S.animIdx?discSVG(v,cx,cy,'drop',`style="--dy:${-(cy+110)}px"`):discSVG(v,cx,cy);
+  }
+  $('#discs').innerHTML=html;
+  let m='';
+  if(S.lastIdx>=0&&S.cells[S.lastIdx]){const r=(S.lastIdx/7)|0,c=S.lastIdx%7;m+=`<circle class="last" cx="${c*100+50}" cy="${(5-r)*100+50}" r="16"/>`;}
+  if(S.over&&S.over.line)for(const i of S.over.line){const r=(i/7)|0,c=i%7;m+=`<circle class="winring" cx="${c*100+50}" cy="${(5-r)*100+50}" r="48"/>`;}
+  if(S.hintCol>=0){const r=rowOf(S.cells,S.hintCol);if(r<6)m+=`<circle class="hintring" cx="${S.hintCol*100+50}" cy="${(5-r)*100+50}" r="46"/>`;}
+  $('#marks').innerHTML=m;
+}
+
+/* ---------- panels & status ---------- */
+function renderLevels(){
+  $('#levels').innerHTML=Object.entries(LEVELS).map(([k,l])=>
+    `<button type="button" class="level" role="radio" aria-checked="${k===S.level}" data-level="${k}"><b>${l.name}</b><span class="tag">${l.tag}</span><span class="d">${l.desc}</span></button>`).join('');
+  $('#customBox').hidden=S.level!=='custom';
+}
+function syncCustom(){
+  const ab=$('#cAb').checked,id=$('#cId').checked;
+  const max=id?14:(ab?8:5);
+  const dr=$('#cDepth');dr.max=max;if(+dr.value>max)dr.value=max;
+  $('#cDepthV').textContent=dr.value+(id?' (max)':'');
+}
+function setStatus(){
+  const st=$('#status'),ns=$('#nextstep');let msg='',chip='',next='';
+  if(S.phase==='setup'){msg='Ready when you are';chip='<span class="chip p1"></span>';next='<b>Next</b><span>Pick a difficulty and who moves first, then press <b style="color:var(--fg)">Start game</b>.</span>';}
+  else if(S.over){
+    if(S.over.type==='draw'){msg='Draw. The board is full.';chip='<span class="chip" style="background:var(--muted)"></span>';}
+    else if(S.over.p===HUMAN){msg='You win!';chip='<span class="chip p1"></span>';}
+    else{msg='The AI wins.';chip='<span class="chip p2"></span>';}
+    next='<b>Next</b><span>Read the AI\'s last reasoning on the right, then play again.</span>';
+  }else if(S.busy){msg='AI is thinking…';chip='<span class="spinner"></span>';next='<b>Wait</b><span>The engine is searching. Its explanation will appear on the right.</span>';}
+  else if(S.turn===HUMAN){msg='Your turn';chip='<span class="chip p1"></span>';next='<b>Your move</b><span>Click a column or press <kbd>1</kbd>–<kbd>7</kbd>. Hover a column to preview where the disc lands.</span>';}
+  st.innerHTML=`${chip}<span class="msg">${msg}</span><span class="count mono">${S.phase==='setup'?'':'Move '+(S.history.length+(S.over?0:1))}</span>`;
+  ns.innerHTML=next;
+}
+function setOverlay(){
+  const o=$('#overlay');
+  if(S.phase==='setup'){
+    o.hidden=false;o.innerHTML=`<div class="box"><h2>Drop four in a row</h2><p class="muted">Pick a difficulty on the right, then start. The defaults are ready to go.</p><button class="btn primary" type="button" data-act="start">Start game</button></div>`;
+  }else if(S.over){
+    const t=S.over.type==='draw'?'A draw':S.over.p===HUMAN?'You won':'The AI won';
+    o.hidden=false;o.innerHTML=`<div class="box"><h2>${t}</h2><p class="muted">${S.history.length} moves played.</p><div class="btnrow" style="justify-content:center"><button class="btn primary" type="button" data-act="again">Play again</button><button class="btn" type="button" data-act="setup">Change settings</button></div></div>`;
+    // let the winning line show before the overlay covers it
+    o.style.opacity='0';o.style.transition='opacity .4s .9s';requestAnimationFrame(()=>o.style.opacity='1');
+  }else{o.hidden=true;o.style.opacity='';o.style.transition='';}
+}
+function renderAll(){
+  renderDiscs();setStatus();setOverlay();drawGhost();
+  $('#panelSetup').hidden=S.phase!=='setup';
+  $('#panelGame').hidden=S.phase==='setup';
+  const canAct=S.phase==='playing'&&!S.busy&&!S.over;
+  $('#hintBtn').disabled=!(canAct&&S.turn===HUMAN);
+  $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&S.history.some(m=>m.p===HUMAN));
+}
+function renderWhyEmpty(){
+  $('#why').innerHTML=`<div class="why-empty"><p class="eyebrow">Why this move?</p>
+    <h3>The AI explains every move</h3>
+    <p>After each AI reply you will see here: how deep it searched, how many positions it examined, how many branches alpha-beta skipped, the line it expects to be played, and a score for every column it considered.</p>
+    <p>You can also press <kbd>H</kbd> during your turn to get the engine's advice with the same explanation.</p></div>`;
+}
+
+/* ---------- game flow ---------- */
+function resetBoard(){
+  S.gameId++;
+  S.cells=new Array(42).fill(0);S.history=[];S.over=null;S.animIdx=-1;S.lastIdx=-1;S.hintCol=-1;S.busy=false;
+}
+function startGame(){
+  resetBoard();S.phase='playing';S.levelUsed=S.level;S.cfgUsed=levelCfg(S.level);
+  S.turn=S.first==='human'?HUMAN:AI;
+  $('#metaLevel').textContent=LEVELS[S.level].name+' · '+cfgText(S.cfgUsed);
+  $('#metaFirst').textContent=S.first==='human'?'You moved first':'AI moved first';
+  renderWhyEmpty();setMeter(null);renderAll();
+  if(S.turn===AI)aiMove();
+}
+function cfgText(c){return (c.id?'iterative ≤':'depth ')+c.depth+(c.id?' · '+(c.timeMs/1000)+' s':'')+' · '+(c.eval==='adv'?'full eval':'basic eval');}
+function applyMove(col,p){
+  const r=rowOf(S.cells,col),idx=r*7+col;
+  S.cells[idx]=p;S.history.push({col,p,idx});S.animIdx=idx;S.lastIdx=idx;S.hintCol=-1;
+  const line=winLine(S.cells,idx,p);
+  if(line)S.over={type:'win',p,line};else if(S.history.length===42)S.over={type:'draw'};
+  playSound('drop');
+  if(line)playSound(p===HUMAN?'win':'lose');
+  S.turn=3-p;
+}
+async function onColumn(c){
+  if(S.phase!=='playing'||S.busy||S.over||S.turn!==HUMAN||rowOf(S.cells,c)>=6)return;
+  applyMove(c,HUMAN);renderAll();
+  if(!S.over)await aiMove();
+}
+async function aiMove(){
+  const gameId=S.gameId;
+  S.busy=true;renderAll();
+  const t0=performance.now(),cfg=S.cfgUsed,lvl=LEVELS[S.levelUsed];
+  const res=await ask({type:'search',cells:S.cells.slice(),player:AI,cfg});
+  if(gameId!==S.gameId)return;
+  let move=res.move,slipped=false,preferred=res.move;
+  if(lvl.slip&&Math.random()<lvl.slip){const l=legal(S.cells);const alt=l.filter(c=>c!==res.move);if(alt.length){move=alt[Math.floor(Math.random()*alt.length)];slipped=true;}}
+  const wait=Math.max(0,500-(performance.now()-t0));if(wait)await sleep(wait);
+  if(gameId!==S.gameId||S.phase!=='playing')return; // ignore a result from an older game
+  S.busy=false;
+  applyMove(move,AI);
+  $('#why').innerHTML=whyHTML(res,'ai',{slipped,preferred,played:move,lvl});
+  setMeter(res.score);renderAll();
+}
+async function doHint(){
+  if(S.busy||S.over||S.turn!==HUMAN)return;
+  S.busy=true;renderAll();$('#why').innerHTML='<div class="why-empty"><p class="eyebrow">Hint</p><h3>Thinking about your best move…</h3></div>';
+  const res=await ask({type:'search',cells:S.cells.slice(),player:HUMAN,cfg:HINT_CFG});
+  S.busy=false;S.hintCol=res.move;
+  $('#why').innerHTML=whyHTML(res,'hint',{});renderAll();
+}
+function undo(){
+  if(S.busy||S.phase!=='playing')return;
+  if(!S.history.some(m=>m.p===HUMAN))return;
+  for(;;){const m=S.history.pop();S.cells[m.idx]=0;if(m.p===HUMAN)break;}
+  S.over=null;S.turn=HUMAN;S.animIdx=-1;S.hintCol=-1;
+  const last=S.history[S.history.length-1];S.lastIdx=last?last.idx:-1;
+  renderWhyEmpty();setMeter(null);renderAll();
+}
+function toSetup(){resetBoard();S.phase='setup';S.turn=HUMAN;renderWhyEmpty();setMeter(null);renderAll();}
+
+/* ---------- meter ---------- */
+function setMeter(scoreAI){
+  let h=50,label='Engine outlook appears after its first move';
+  if(scoreAI!==null){
+    if(scoreAI>=WIN-100){h=0;label='AI has a forced win';}
+    else if(scoreAI<=-(WIN-100)){h=100;label='You have a forced win';}
+    else{h=50+50*Math.tanh(-scoreAI/260);
+      label=Math.abs(scoreAI)<25?'Roughly even':scoreAI>0?'AI is ahead':'You are ahead';}
+  }
+  $('#meterH').style.width=h+'%';$('#meterA').style.width=(100-h)+'%';$('#meterLabel').textContent=label;
+}
+
+/* ---------- explanation ---------- */
+function whyHTML(res,who,x){
+  const me=who==='ai',subj=me?'I':'You',opp=me?'you':'the AI';
+  const played=me?x.played:res.move,col=played+1,cfg=res.cfg;
+  const reasons=[];
+  const t=res.tactics;
+  if(!x.slipped){
+    if(t.wins.includes(res.move))reasons.push(['!',`<b>Winning move.</b> Column ${col} completes four in a row.`]);
+    else if(t.threats.includes(res.move))reasons.push(['!',`<b>Forced block.</b> ${me?'You':'The AI'} threatened to win in column ${col}, so ${me?'I took':'take'} that square first.`]);
+  }
+  const s=res.score;
+  let verdict;
+  if(s>=WIN-100){const k=WIN-s,n=Math.floor(k/2)+1;
+    verdict=n===1?`${subj} ${me?'win':'can win'} on this very move.`:`<b>Forced win in ${n} moves.</b> The search proved ${subj} can finish the game in ${n} of ${me?'my':'your'} moves, whatever ${opp} replies.`;}
+  else if(s<=-(WIN-100)){const k=WIN+s;
+    verdict=`<b>Every line loses by force</b> within ${Math.ceil((k+1)/2)} of ${opp==='you'?'your':'the AI\'s'} moves. This is the move that delays it longest.`;}
+  else verdict=`<b>No forced result</b> within ${res.depth} plies. Best positional score: <span class="mono">${s>0?'+':''}${s}</span> ${Math.abs(s)<25?'(roughly even)':s>0?`(good for ${subj==='I'?'me':'you'})`:`(good for ${opp})`}.`;
+  reasons.push(['≈',verdict]);
+  let est=0;for(let i=1,p=1;i<=res.depth;i++){p*=7;est+=p;}
+  const effort=cfg.id
+    ?`<b>Iterative deepening</b> completed depths 1 to ${res.depth}${res.timedOut?` and then hit its ${cfg.timeMs/1000} s time limit on depth ${res.depth+1}`:''}.`
+    :`<b>Fixed-depth search</b> to ${res.depth} plies.`;
+  reasons.push(['d',`${effort} It examined <span class="mono">${fmt(res.nodes)}</span> positions in ${res.ms} ms. ${cfg.ab
+    ?`Alpha-beta cut off <span class="mono">${fmt(res.cutoffs)}</span> branches and skipped <span class="mono">${fmt(res.pruned)}</span> subtrees. Plain minimax would need roughly <span class="mono">${fmt(est)}</span> positions at this depth.`
+    :'Alpha-beta was switched off, so every line was explored.'}`]);
+  const a=res.after;
+  reasons.push(['e',`<b>Evaluation</b> (${cfg.eval==='adv'?'advanced: centre, open threes and pairs':'basic: square weights'}) of the position after column ${col}. Counts are ${subj==='I'?'mine':'yours'} against ${opp==='you'?'yours':'theirs'}:
+    <table class="evtab" style="margin-top:6px"><tr><th></th><th>${subj==='I'?'Me':'You'}</th><th>${me?'You':'AI'}</th></tr>
+    <tr><td>Centre-column discs</td><td class="mono">${a.cm}</td><td class="mono">${a.ct}</td></tr>
+    <tr><td>Open threes (one gap from four)</td><td class="mono">${a.t3m}</td><td class="mono">${a.t3t}</td></tr>
+    <tr><td>Open pairs</td><td class="mono">${a.t2m}</td><td class="mono">${a.t2t}</td></tr></table>`]);
+
+  const first=me?AI:HUMAN;
+  const pv=(res.pv||[]).slice(0,8).map((c,i)=>`<span class="${(i%2?3-first:first)===1?'p1':'p2'}" title="${i%2?opp:'Played now'}">${c+1}</span>`).join('');
+  const bars=res.rootScores.map((r,c)=>{
+    if(!r)return `<div class="bar full"><span>Col ${c+1}</span><span class="track"></span><span class="v">full</span></div>`;
+    const v=r.v;let w,txt;
+    if(v>=WIN-100){w=100;txt='win';}else if(v<=-(WIN-100)){w=4;txt='loss';}
+    else{w=Math.max(4,50+46*Math.tanh(v/220));txt=(r.exact?'':'≤ ')+(v>0?'+':'')+v;}
+    return `<div class="bar${c===res.move?' best':''}"><span>Col ${c+1}</span><span class="track"><span class="fill" style="width:${w}%"></span></span><span class="v">${txt}</span></div>`;
+  }).join('');
+  const slip=x.slipped?`<div class="slip">🎲 <b>Rookie slip.</b> The engine preferred column ${x.preferred+1}, but this level plays a random move ${Math.round(x.lvl.slip*100)}% of the time, so it dropped in column ${played+1}. The analysis below is for the engine's preferred move.</div>`:'';
+  const head=me?`I played column ${col}`:`Suggested move: column ${col}`;
+  return `${slip}<p class="eyebrow">${me?'Why this move?':'Hint for you'}</p><h3>${head}</h3>
+    <p class="sub">${me?LEVELS[x.lvl?S.levelUsed:'skilled'].name+' level · ':''}${cfgText(cfg)}</p>
+    <div class="stats"><div class="stat"><b>${res.depth}</b><span>Plies deep</span></div><div class="stat"><b>${fmt(res.nodes)}</b><span>Positions</span></div>
+      <div class="stat"><b>${cfg.ab?fmt(res.pruned):'off'}</b><span>Pruned</span></div><div class="stat"><b>${res.ms}<small> ms</small></b><span>Time</span></div></div>
+    <ul class="reasons">${reasons.map(r=>`<li><i>${r[0]}</i><div>${r[1]}</div></li>`).join('')}</ul>
+    ${pv?`<div class="subhead">Expected line (best play from both sides)</div><div class="pv">${pv}<em>${(res.pv||[]).length>8?'…':''}</em></div>`:''}
+    <div class="subhead">Every column the engine scored</div><div class="bars">${bars}</div>
+    <p class="note" style="margin-top:8px">"≤" means alpha-beta only proved this move is no better than the best one, so its exact score was not computed.</p>`;
+}
+
+/* ---------- tabs & theme ---------- */
+function showTab(){
+  const t=['play','lab','how'].includes(location.hash.slice(1))?location.hash.slice(1):'play';
+  ['play','lab','how'].forEach(k=>{$('#view-'+k).hidden=k!==t;});
+  $$('nav a').forEach(a=>{if(a.dataset.tab===t)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+}
+function setupTheme(){
+  const saved=store.get('aba-theme');if(saved)document.documentElement.setAttribute('data-theme',saved);
+  $('#themeBtn').addEventListener('click',()=>{
+    const cur=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+    const next=cur==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);store.set('aba-theme',next);
+    if(labRows)drawLab();
+  });
+}
+
+/* ---------- Engine Lab ---------- */
+let labRows=null,labMeta=null;
+const CONFIGS=[
+  {k:'mm',name:'Minimax',cfg:{ab:false,order:'none',id:false},sv:'--s1'},
+  {k:'ab',name:'Alpha-beta',cfg:{ab:true,order:'none',id:false},sv:'--s2'},
+  {k:'abo',name:'+ Move ordering',cfg:{ab:true,order:'smart',id:false},sv:'--s3'},
+  {k:'abid',name:'+ Iterative deepening',cfg:{ab:true,order:'smart',id:true,full:true},sv:'--s4'}
+];
+function simulate(seq){const cells=new Array(42).fill(0);let p=1;for(const c of seq){cells[rowOf(cells,c)*7+c]=p;p=3-p;}return{cells,player:p};}
+function labPosition(){
+  const v=$('#labPos').value;
+  if(v==='empty')return{cells:new Array(42).fill(0),player:1,name:'empty board'};
+  if(v==='cur'&&S.phase==='playing'&&!S.over)return{cells:S.cells.slice(),player:S.turn,name:'current game position'};
+  const m=simulate([3,3,2,4,4,2,3,4]);return{...m,name:'midgame sample'};
+}
+async function runLab(){
+  const maxD=+$('#labDepth').value,ev=$('#labEval').value,pos=labPosition();
+  const btn=$('#labRun'),prog=$('#labProg'),bar=prog.firstElementChild;
+  btn.disabled=true;prog.hidden=false;bar.style.width='0';$('#labOut').innerHTML='<p class="muted">Running…</p>';
+  const rows=[];const total=maxD*CONFIGS.length;let done=0;
+  for(let d=1;d<=maxD;d++){
+    const row={d};
+    for(const c of CONFIGS){
+      if(c.k==='mm'&&d>6){row[c.k]=null;}
+      else{const r=await ask({type:'search',cells:pos.cells,player:pos.player,cfg:{...c.cfg,depth:d,eval:ev}});row[c.k]={nodes:r.nodes,ms:r.ms,move:r.move,score:r.score};}
+      done++;bar.style.width=(done/total*100)+'%';
+    }
+    rows.push(row);
+  }
+  labRows=rows;labMeta={pos:pos.name,ev,maxD};drawLab();btn.disabled=false;prog.hidden=true;
+}
+function drawLab(){
+  const rows=labRows,out=$('#labOut');
+  const pct=(a,b)=>b?Math.round((1-a/b)*100):null;
+  const head=`<tr><th>Depth<br>(plies)</th>${CONFIGS.map(c=>`<th>${c.name}<br>positions</th>`).join('')}<th>Pruning<br>saved</th><th>Ordering<br>saved more</th></tr>`;
+  const body=rows.map(r=>{
+    const p1=r.mm?pct(r.ab.nodes,r.mm.nodes):null,p2=pct(r.abo.nodes,r.ab.nodes);
+    const best=Math.min(...CONFIGS.filter(c=>r[c.k]).map(c=>r[c.k].nodes));
+    return `<tr><td class="mono">${r.d}</td>${CONFIGS.map(c=>{const v=r[c.k];return v?`<td class="mono ${v.nodes===best?'win':''}">${fmt(v.nodes)}<small>${v.ms} ms</small></td>`:`<td class="muted">skipped</td>`;}).join('')}
+      <td class="mono">${p1===null?'–':p1+'%'}</td><td class="mono">${p2===null?'–':p2+'%'}</td></tr>`;}).join('');
+  const last=rows[rows.length-1],cmp=[...rows].reverse().find(r=>r.mm);
+  const ins=[];
+  if(cmp)ins.push(`<div class="insight"><b>${pct(cmp.ab.nodes,cmp.mm.nodes)}%</b><span>fewer positions with alpha-beta than minimax at depth ${cmp.d} (${fmt(cmp.mm.nodes)} → ${fmt(cmp.ab.nodes)}). Both return the same move.</span></div>`);
+  {const g=pct(last.abo.nodes,last.ab.nodes);ins.push(`<div class="insight"><b>${g}%</b><span>${g>=0?'further reduction':'change (more positions, this position favours plain left-to-right order)'} from move ordering at depth ${last.d} (${fmt(last.ab.nodes)} → ${fmt(last.abo.nodes)}).</span></div>`);}
+  ins.push(`<div class="insight"><b>${(last.abid.nodes/last.abo.nodes).toFixed(2)}×</b><span>positions for iterative deepening versus a direct depth-${last.d} search. The overhead is small and buys a usable answer at any time limit.</span></div>`);
+  const bf=k=>Math.pow(last[k].nodes,1/last.d).toFixed(2);
+  ins.push(`<div class="insight"><b>${bf('abo')}</b><span>effective branching factor with pruning and ordering at depth ${last.d}${cmp&&last.mm?`, versus ${bf('mm')} for minimax`:''}. Fewer branches per node means deeper search in the same time.</span></div>`);
+  const same=rows.every(r=>!r.mm||(r.mm.move===r.ab.move&&r.ab.move===r.abo.move));
+  out.innerHTML=`<p class="muted">Position: <b style="color:var(--fg)">${labMeta.pos}</b> · evaluation: <b style="color:var(--fg)">${labMeta.ev==='adv'?'advanced':'basic'}</b>. Fewest positions per row is highlighted. ${same?'All three plain searches chose the same move at every depth, as theory predicts.':''}</p>
+    <div class="table-scroll"><table class="lab-table">${head}${body}</table></div>
+    <div class="insights">${ins.join('')}</div>
+    <div><div class="subhead">Positions examined by depth (log scale)</div>${chartSVG(rows)}</div>`;
+}
+function chartSVG(rows){
+  const W=640,H=300,L=58,Rm=128,T=14,B=38,pw=W-L-Rm,ph=H-T-B;
+  const all=[];rows.forEach(r=>CONFIGS.forEach(c=>{if(r[c.k])all.push(r[c.k].nodes);}));
+  const lo=Math.floor(Math.log10(Math.max(1,Math.min(...all)))),hi=Math.ceil(Math.log10(Math.max(...all)));
+  const x=d=>L+(rows.length===1?pw/2:(d-1)/(rows.length-1)*pw);
+  const y=n=>T+ph-(Math.log10(Math.max(1,n))-lo)/Math.max(1,hi-lo)*ph;
+  let g='';
+  for(let e=lo;e<=hi;e++){g+=`<line class="gl" x1="${L}" x2="${L+pw}" y1="${y(10**e)}" y2="${y(10**e)}"/><text x="${L-8}" y="${y(10**e)+4}" text-anchor="end">${e===0?'1':'10^'+e}</text>`;}
+  rows.forEach(r=>{g+=`<text x="${x(r.d)}" y="${H-16}" text-anchor="middle">${r.d}</text>`;});
+  g+=`<text x="${L+pw/2}" y="${H-2}" text-anchor="middle">search depth (plies)</text>`;
+  const labels=[];
+  CONFIGS.forEach(c=>{
+    const pts=rows.filter(r=>r[c.k]).map(r=>[x(r.d),y(r[c.k].nodes)]);if(!pts.length)return;
+    const col=`var(${c.sv})`;
+    g+=`<polyline fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round" points="${pts.map(p=>p.join(',')).join(' ')}"/>`;
+    pts.forEach(p=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="3.2" fill="${col}"/>`;});
+    labels.push({y:pts[pts.length-1][1],x:pts[pts.length-1][0],c});
+  });
+  labels.sort((a,b)=>a.y-b.y);for(let i=1;i<labels.length;i++)if(labels[i].y-labels[i-1].y<14)labels[i].y=labels[i-1].y+14;
+  labels.forEach(l=>{g+=`<text class="lab" x="${l.x+9}" y="${l.y+4}" style="fill:var(${l.c.sv})">${l.c.name}</text>`;});
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of positions examined at each search depth for four search variants">${g}</svg>`;
+}
+
+async function runDuel(){
+  const depth=+$('#duelDepth').value,btn=$('#duelRun'),prog=$('#duelProg'),bar=prog.firstElementChild,out=$('#duelOut');
+  btn.disabled=true;prog.hidden=false;bar.style.width='0';out.innerHTML='<p class="muted" style="margin-top:12px">Playing…</p>';
+  let seed=20241028;const rnd=n=>{seed=(seed*1664525+1013904223)>>>0;return seed%n;};
+  const openings=[];while(openings.length<4)openings.push([rnd(7),rnd(7)]);
+  const tally={adv:0,basic:0,draw:0},stat={adv:{n:0,t:0},basic:{n:0,t:0}},list=[];let g=0;
+  for(const op of openings)for(const advFirst of [true,false]){
+    const sim=simulate(op);let cells=sim.cells,p=sim.player,moves=op.length,result=null;
+    const advP=advFirst?1:2,evFor=q=>q===advP?'adv':'basic';
+    while(!result){
+      const ev=evFor(p);
+      const r=await ask({type:'search',cells:cells.slice(),player:p,cfg:{depth,ab:true,order:'smart',id:false,eval:ev}});
+      stat[ev].n+=r.nodes;stat[ev].t++;
+      const idx=rowOf(cells,r.move)*7+r.move;cells[idx]=p;moves++;
+      if(winLine(cells,idx,p))result={w:ev};else if(moves===42)result={w:'draw'};
+      p=3-p;
+    }
+    tally[result.w]++;list.push(`<div class="duel-row"><b>Game ${++g}</b><span class="muted">Advanced played ${advFirst?'first':'second'}</span><span style="margin-left:auto">${result.w==='draw'?'Draw':(result.w==='adv'?'Advanced':'Basic')+' wins in '+moves+' moves'}</span></div>`);
+    bar.style.width=(g/8*100)+'%';
+  }
+  const avg=k=>stat[k].t?fmt(stat[k].n/stat[k].t):'–';
+  out.innerHTML=`<div class="scorebig"><div><b style="color:var(--accent)">${tally.adv}</b><span class="muted">Advanced wins</span></div><div><b>${tally.draw}</b><span class="muted">Draws</span></div><div><b style="color:var(--bad)">${tally.basic}</b><span class="muted">Basic wins</span></div></div>
+    <p class="note" style="margin-top:8px">Average positions per move: advanced <span class="mono">${avg('adv')}</span>, basic <span class="mono">${avg('basic')}</span>. Both searched ${depth} plies deep with alpha-beta and move ordering, so only the evaluation differs.</p>
+    <div class="duel-list">${list.join('')}</div>`;
+  btn.disabled=false;prog.hidden=true;
+}
+
+/* ---------- difficulty table ---------- */
+function fillLevelTable(){
+  const rows=Object.entries(LEVELS).filter(([k])=>k!=='custom').map(([k,l])=>{const c=l.cfg;
+    return `<tr><td><b>${l.name}</b></td><td class="mono">${c.id?'up to '+c.depth+' (iterative)':c.depth}</td><td>${c.eval==='adv'?'Advanced':'Basic'}</td><td>${c.id?c.timeMs/1000+' s limit':'none'}</td><td>${l.slip?Math.round(l.slip*100)+'% random moves':'none'}</td></tr>`;}).join('');
+  $('#lvlTable').innerHTML=`<tr><th>Level</th><th>Depth (plies)</th><th>Evaluation</th><th>Time</th><th>Mistakes</th></tr>${rows}<tr><td colspan="5" class="muted">All levels use alpha-beta pruning and move ordering. Custom lets you turn each one off to feel the difference.</td></tr>`;
+}
+
+/* ---------- wiring ---------- */
+function init(){
+  buildBoard();renderLevels();fillLevelTable();renderWhyEmpty();syncCustom();setupTheme();
+  $('#levels').addEventListener('click',e=>{const b=e.target.closest('[data-level]');if(!b)return;S.level=b.dataset.level;renderLevels();});
+  $('#firstSeg').addEventListener('click',e=>{const b=e.target.closest('[data-first]');if(!b)return;S.first=b.dataset.first;
+    $$('#firstSeg button').forEach(x=>x.setAttribute('aria-checked',x===b));});
+  ['cDepth','cAb','cOrder','cId','cEval'].forEach(id=>$('#'+id).addEventListener('input',syncCustom));
+  $('#soundBtn').addEventListener('click',()=>{
+    if(!soundEnabled){
+      if(!enableAudio()){ $('#soundBtn').textContent='Sound unavailable';return; }
+      soundEnabled=true;$('#soundBtn').textContent='Sound: On';$('#soundBtn').setAttribute('aria-pressed','true');playSound('click');
+    }else{soundEnabled=false;$('#soundBtn').textContent='Sound: Off';$('#soundBtn').setAttribute('aria-pressed','false');}
+  });
+  $('#startBtn').addEventListener('click',startGame);
+  $('#overlay').addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(!a)return;
+    if(a.dataset.act==='start'||a.dataset.act==='again')startGame();else toSetup();});
+  $('#hintBtn').addEventListener('click',doHint);$('#undoBtn').addEventListener('click',undo);$('#newBtn').addEventListener('click',toSetup);
+  $('#labRun').addEventListener('click',runLab);$('#duelRun').addEventListener('click',runDuel);
+  $('#labDepth').addEventListener('input',e=>$('#labDepthV').textContent=e.target.value);
+  $('#duelDepth').addEventListener('input',e=>$('#duelDepthV').textContent=e.target.value);
+  document.addEventListener('keydown',e=>{
+    if(e.target.closest('input,select,textarea')||e.metaKey||e.ctrlKey||e.altKey)return;
+    if($('#view-play').hidden)return;
+    if(/^[1-7]$/.test(e.key))onColumn(+e.key-1);
+    else if(e.key==='h'||e.key==='H')doHint();
+    else if(e.key==='u'||e.key==='U')undo();
+  });
+  window.addEventListener('hashchange',showTab);showTab();
+  startWorker();renderAll();
+  // sample game state so the first view shows the board in use
+  S.cells=simulate([3,3,2,4,4,2,3,4]).cells;S.phase='setup';renderDiscs();
+}
+init();
+})();
+</script>
+
+</body></html>
