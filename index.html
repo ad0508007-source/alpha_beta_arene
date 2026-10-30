@@ -634,7 +634,7 @@ const LEVELS={
 const HINT_CFG={depth:12,ab:true,order:'smart',id:true,timeMs:900,eval:'adv'};
 
 /* ---------- state ---------- */
-const S={phase:'setup',mode:'ai',hintsLeft:3,level:'skilled',first:'human',cells:new Array(42).fill(0),turn:HUMAN,history:[],busy:false,
+const S={phase:'setup',mode:'ai',hintsLeft:3,undoUsed:0,level:'skilled',first:'human',cells:new Array(42).fill(0),turn:HUMAN,history:[],busy:false,
   over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0};
 function customCfg(){
   const id=$('#cId').checked;
@@ -741,7 +741,7 @@ function renderAll(){
   const canAct=S.phase==='playing'&&!S.busy&&!S.over;
   $('#hintBtn').disabled=!(canAct&&S.mode==='ai'&&S.turn===HUMAN&&S.hintsLeft>0);
   $('#hintCount').textContent=S.hintsLeft+' left';
-  $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&!S.over&&S.history.length>0);
+  $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&!S.over&&S.history.length>0&&S.undoUsed<2);
 }
 function renderWhyEmpty(){
   $('#why').innerHTML=`<div class="why-empty"><p class="eyebrow">Why this move?</p>
@@ -753,7 +753,7 @@ function renderWhyEmpty(){
 /* ---------- game flow ---------- */
 function resetBoard(){
   S.gameId++;
-  S.cells=new Array(42).fill(0);S.history=[];S.over=null;S.hintsLeft=3;S.animIdx=-1;S.lastIdx=-1;S.hintCol=-1;S.busy=false;
+  S.cells=new Array(42).fill(0);S.history=[];S.over=null;S.hintsLeft=3;S.undoUsed=0;S.animIdx=-1;S.lastIdx=-1;S.hintCol=-1;S.busy=false;
 }
 function startGame(){
   resetBoard();S.phase='playing';S.levelUsed=S.level;S.cfgUsed=levelCfg(S.level);
@@ -803,12 +803,35 @@ async function doHint(){
   $('#why').innerHTML=whyHTML(res,'hint',{});renderAll();
 }
 function undo(){
-  if(S.busy||S.phase!=='playing'||S.over||!S.history.length)return;
-  if(S.mode==='human'){const m=S.history.pop();S.cells[m.idx]=0;}
-  else{if(!S.history.some(m=>m.p===HUMAN))return;for(;;){const m=S.history.pop();S.cells[m.idx]=0;if(m.p===HUMAN)break;}}
-  S.over=null;S.turn=HUMAN;S.animIdx=-1;S.hintCol=-1;
-  const last=S.history[S.history.length-1];S.lastIdx=last?last.idx:-1;
-  renderWhyEmpty();setMeter(null);renderAll();
+  if(S.busy||S.phase!=='playing'||S.over||!S.history.length||S.undoUsed>=2)return;
+
+  if(S.mode==='human'){
+    const m=S.history.pop();
+    S.cells[m.idx]=0;
+  }
+  else{
+    if(!S.history.some(m=>m.p===HUMAN))return;
+
+    for(;;){
+      const m=S.history.pop();
+      S.cells[m.idx]=0;
+      if(m.p===HUMAN)break;
+    }
+  }
+
+  S.undoUsed++;
+
+  S.over=null;
+  S.turn=HUMAN;
+  S.animIdx=-1;
+  S.hintCol=-1;
+
+  const last=S.history[S.history.length-1];
+  S.lastIdx=last?last.idx:-1;
+
+  renderWhyEmpty();
+  setMeter(null);
+  renderAll();
 }
 function toSetup(){resetBoard();S.phase='setup';S.turn=HUMAN;renderWhyEmpty();setMeter(null);renderAll();}
 
