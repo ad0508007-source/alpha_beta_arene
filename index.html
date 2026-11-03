@@ -1085,29 +1085,178 @@ function watchOnlineRoom(room){
     if(d.status==='finished')onlineMsg('Game finished. '+(d.over?.type==='draw'?'It is a draw.':(d.over?.p===S.onlinePlayer?'You won!':'Your opponent won.')));
   };
   S.onlineRef.on('value',cb);S.onlineUnsub=()=>S.onlineRef.off('value',cb);
+}async function createOnlineRoom() {
+  try {
+    onlineMsg('Connecting to Firebase...');
+
+    const db = await ensureFirebase();
+    let room = '';
+    let created = false;
+
+    for (let i = 0; i < 15 && !created; i++) {
+      room = makeRoomCode();
+
+      const ref = db.ref('rooms/' + room);
+
+      const result = await ref.transaction(current => {
+        if (current === null) {
+          return {
+            host: S.onlineUid,
+            guest: null,
+            status: 'waiting',
+            cells: new Array(42).fill(0),
+            moves: [],
+            turn: 1,
+            over: null,
+            createdAt: firebase.database.ServerValue.TIMESTAMP
+          };
+        }
+
+        return;
+      });
+
+      created = result.committed;
+    }
+
+    if (!created) {
+      throw new Error('Could not create a unique room. Please try again.');
+    }
+
+    S.onlineRoom = room;
+    S.onlinePlayer = HUMAN;
+    S.mode = 'online';
+
+    $('#panelSetup').hidden = true;
+    $('#panelGame').hidden = false;
+
+    $('#metaLevel').textContent = 'Online Multiplayer';
+    $('#metaFirst').textContent = 'You are Coral (Red)';
+
+    resetBoard();
+    S.phase = 'playing';
+
+    watchOnlineRoom(room);
+
+    onlineMsg(
+      'Room created successfully! Your room code is ' +
+      room +
+      '. Waiting for opponent...'
+    );
+
+  } catch (error) {
+    console.error('CREATE ROOM ERROR:', error);
+    onlineMsg('Room creation failed: ' + error.message);
+  }
 }
-async function createOnlineRoom(){
-  try{
-    const db=await ensureFirebase();let room,ref,created=false;
-    for(let i=0;i<8&&!created;i++){room=makeRoomCode();ref=db.ref('rooms/'+room);const result=await ref.transaction(cur=>cur===null?{host:S.onlineUid,guest:null,status:'waiting',cells:new Array(42).fill(0),moves:[],turn:1,over:null,createdAt:firebase.database.ServerValue.TIMESTAMP}:undefined);created=result.committed;}
-    if(!created)throw Error('Could not reserve a room code. Please try again.');
-    S.onlineRoom=room;S.onlinePlayer=HUMAN;S.mode='online';S.phase='playing';S.first='human';
-    resetBoard();S.phase='playing';$('#panelSetup').hidden=true;$('#panelGame').hidden=false;$('#metaLevel').textContent='Online multiplayer';$('#metaFirst').textContent='You are Coral (Red)';
-    watchOnlineRoom(room);renderAll();onlineMsg('Room '+room+' created. Waiting for the second player…');
-  }catch(e){onlineMsg(e.message||'Could not create room. Check Firebase setup and database rules.');}
-}
-async function joinOnlineRoom(){
-  const room=$('#roomCodeInput').value.trim().toUpperCase();
-  if(!/^[A-Z0-9]{6}$/.test(room)){onlineMsg('Enter a valid 6-character room code.');return;}
-  try{
-    const db=await ensureFirebase(),ref=db.ref('rooms/'+room);let joined=false;
-    const result=await ref.transaction(cur=>{if(!cur||cur.host===S.onlineUid||cur.guest||cur.status!=='waiting')return;cur.guest=S.onlineUid;cur.status='playing';return cur;});
-    joined=result.committed;
-    if(!joined)throw Error('Room not found, already full, or no longer waiting. Check the code.');
-    S.onlineRoom=room;S.onlinePlayer=AI;S.mode='online';S.first='human';S.phase='playing';
-    $('#panelSetup').hidden=true;$('#panelGame').hidden=false;$('#metaLevel').textContent='Online multiplayer';$('#metaFirst').textContent='You are Gold (Yellow)';
-    watchOnlineRoom(room);renderAll();onlineMsg('Joined room '+room+'. You are Gold (Yellow).');
-  }catch(e){onlineMsg(e.message||'Could not join room. Check Firebase setup and database rules.');}
+
+
+async function joinOnlineRoom() {
+
+  const room = $('#roomCodeInput').value
+    .trim()
+    .toUpperCase();
+
+  if (!/^[A-Z0-9]{6}$/.test(room)) {
+    onlineMsg('Please enter a valid 6-character room code.');
+    return;
+  }
+
+  try {
+
+    onlineMsg('Connecting to room ' + room + '...');
+
+    const db = await ensureFirebase();
+    const ref = db.ref('rooms/' + room);
+
+    // Check whether the room exists.
+    const snapshot = await ref.once('value');
+
+    if (!snapshot.exists()) {
+      throw new Error(
+        'ROOM_NOT_FOUND: This room does not exist. Ask the host to create a new room.'
+      );
+    }
+
+    const roomData = snapshot.val();
+
+    // Prevent the host from joining their own room.
+    if (roomData.host === S.onlineUid) {
+      throw new Error(
+        'You cannot join your own room. Use another device or browser.'
+      );
+    }
+
+    // Check whether another player has already joined.
+    if (roomData.guest) {
+      throw new Error(
+        'ROOM_FULL: This room already has two players.'
+      );
+    }
+
+    if (roomData.status !== 'waiting') {
+      throw new Error(
+        'ROOM_CLOSED: This room is no longer waiting for a player.'
+      );
+    }
+
+    // Claim the empty guest position atomically.
+    const result = await ref.transaction(current => {
+
+      if (!current) return;
+
+      if (
+        current.status !== 'waiting' ||
+        current.guest != null ||
+        current.host === S.onlineUid
+      ) {
+        return;
+      }
+
+      current.guest = S.onlineUid;
+      current.status = 'playing';
+
+      return current;
+    });
+
+    if (!result.committed) {
+      throw new Error(
+        'ROOM_UNAVAILABLE: Another player may have joined this room.'
+      );
+    }
+
+    // Successfully joined.
+    S.onlineRoom = room;
+    S.onlinePlayer = AI;
+    S.mode = 'online';
+    S.first = 'human';
+    S.phase = 'playing';
+
+    $('#panelSetup').hidden = true;
+    $('#panelGame').hidden = false;
+
+    $('#metaLevel').textContent = 'Online Multiplayer';
+    $('#metaFirst').textContent = 'You are Gold (Yellow)';
+
+    watchOnlineRoom(room);
+
+    onlineMsg(
+      'Successfully joined room ' +
+      room +
+      '! You are Gold (Yellow).'
+    );
+
+  } catch (error) {
+
+    console.error('JOIN ROOM ERROR:', error);
+
+    if (error.code === 'PERMISSION_DENIED') {
+      onlineMsg(
+        'Firebase permission denied. Please check your database rules.'
+      );
+    } else {
+      onlineMsg(error.message || 'Unable to join room.');
+    }
+  }
 }
 async function submitOnlineMove(col){
   if(!S.onlineRef||S.onlineBusy||S.over)return;
