@@ -284,7 +284,16 @@ footer{margin-top:34px;color:var(--muted);font-size:.8rem}
             <div class="seg" id="modeSeg" role="radiogroup" aria-label="Game mode">
               <button type="button" role="radio" aria-checked="true" data-mode="ai">Human vs AI</button>
               <button type="button" role="radio" aria-checked="false" data-mode="human">Human vs Human</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="online">Online Multiplayer</button>
             </div>
+          </div>
+          <div class="card" id="onlineSetup" hidden style="margin:12px 0;padding:14px">
+            <h3 style="margin:0 0 8px">Online multiplayer</h3>
+            <p class="muted" style="margin:0 0 12px">Create a room and share its 6-character code, or join a friend's room.</p>
+            <div class="btnrow"><button class="btn primary" id="createRoomBtn" type="button">Create room</button></div>
+            <div class="step" style="margin-top:10px"><label for="roomCodeInput">Room code</label><input id="roomCodeInput" maxlength="6" autocomplete="off" placeholder="ABC123" style="text-transform:uppercase;width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text)"></div>
+            <button class="btn" id="joinRoomBtn" type="button">Join room</button>
+            <p id="onlineMessage" class="note" aria-live="polite" style="margin:10px 0 0">Connect to Firebase to play online.</p>
           </div>
           <div class="step" id="difficultyStep">
             <div class="step-h"><span class="num">2</span>Choose a difficulty</div>
@@ -315,6 +324,7 @@ footer{margin-top:34px;color:var(--muted);font-size:.8rem}
         <div class="card" id="panelGame" hidden>
           <h2>Game in progress</h2>
           <div class="playing-meta"><span class="tagpill" id="metaLevel"></span><span class="tagpill" id="metaFirst"></span></div>
+          <div id="onlineGameInfo" class="note" hidden style="margin:8px 0"><b>Room:</b> <span id="activeRoomCode"></span> · <span id="onlinePlayerLabel"></span> <button class="btn" id="copyRoomBtn" type="button">Copy code</button> <button class="btn" id="leaveRoomBtn" type="button">Leave</button></div>
           <ol class="how-list">
             <li>Click a column, or press <kbd>1</kbd> to <kbd>7</kbd>, to drop a coral disc.</li>
             <li>The AI answers. Its reasoning appears below under "Why this move?".</li>
@@ -322,7 +332,7 @@ footer{margin-top:34px;color:var(--muted);font-size:.8rem}
           </ol>
           <div class="btnrow">
             <button class="btn" id="hintBtn" type="button">Hint <span id="hintCount">3 left</span> <kbd>H</kbd></button>
-            <button class="btn" id="undoBtn" type="button">Undo <kbd>U</kbd></button>
+            <button class="btn" id="undoBtn" type="button">Undo <span id="undoCount">2 left</span> <kbd>U</kbd></button>
             <button class="btn" id="newBtn" type="button">New game</button>
           </div>
         </div>
@@ -410,6 +420,9 @@ footer{margin-top:34px;color:var(--muted);font-size:.8rem}
 </div>
 
 <!-- ================= ENGINE (runs in a Web Worker, or inline as a fallback) ================= -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script id="engine">
 const Engine=(function(){
 const R=6,C=7,N=42,WIN=100000,INF=1e9;
@@ -635,7 +648,7 @@ const HINT_CFG={depth:12,ab:true,order:'smart',id:true,timeMs:900,eval:'adv'};
 
 /* ---------- state ---------- */
 const S={phase:'setup',mode:'ai',hintsLeft:3,undoUsed:0,level:'skilled',first:'human',cells:new Array(42).fill(0),turn:HUMAN,history:[],busy:false,
-  over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0};
+  over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0,onlineRoom:null,onlineRef:null,onlineUid:null,onlinePlayer:0,onlineUnsub:null,onlineBusy:false};
 function customCfg(){
   const id=$('#cId').checked;
   return{depth:+$('#cDepth').value,ab:$('#cAb').checked,order:$('#cOrder').checked?'smart':'none',id,timeMs:id?1500:0,eval:$('#cEval').value};
@@ -741,7 +754,11 @@ function renderAll(){
   const canAct=S.phase==='playing'&&!S.busy&&!S.over;
   $('#hintBtn').disabled=!(canAct&&S.mode==='ai'&&S.turn===HUMAN&&S.hintsLeft>0);
   $('#hintCount').textContent=S.hintsLeft+' left';
-  $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&!S.over&&S.history.length>0&&S.undoUsed<2);
+  const undoLeft=Math.max(0,2-S.undoUsed);
+  $('#undoCount').textContent=undoLeft+' left';
+  $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&!S.over&&S.history.length>0&&undoLeft>0&&S.mode!=='online');
+  $('#onlineGameInfo').hidden=S.mode!=='online'||!S.onlineRoom;
+  if(S.onlineRoom){$('#activeRoomCode').textContent=S.onlineRoom;$('#onlinePlayerLabel').textContent=S.onlinePlayer===HUMAN?'You are Coral (Red)':'You are Gold (Yellow)';}
 }
 function renderWhyEmpty(){
   $('#why').innerHTML=`<div class="why-empty"><p class="eyebrow">Why this move?</p>
@@ -756,6 +773,7 @@ function resetBoard(){
   S.cells=new Array(42).fill(0);S.history=[];S.over=null;S.hintsLeft=3;S.undoUsed=0;S.animIdx=-1;S.lastIdx=-1;S.hintCol=-1;S.busy=false;
 }
 function startGame(){
+  if(S.mode==='online'){onlineMsg('Create or join a room to start an online game.');return;}
   resetBoard();S.phase='playing';S.levelUsed=S.level;S.cfgUsed=levelCfg(S.level);
   S.turn=S.first==='human'?HUMAN:AI;
   $('#metaLevel').textContent=S.mode==='ai'?LEVELS[S.level].name+' · '+cfgText(S.cfgUsed):'Human vs Human';
@@ -777,6 +795,7 @@ async function onColumn(c){
   if(S.phase!=='playing'||S.busy||S.over||rowOf(S.cells,c)>=6)return;
   const player=S.turn;
   if(S.mode==='ai'&&player!==HUMAN)return;
+  if(S.mode==='online'){await submitOnlineMove(c);return;}
   applyMove(c,player);renderAll();
   if(!S.over&&S.mode==='ai')await aiMove();
 }
@@ -1025,11 +1044,105 @@ function fillLevelTable(){
   $('#lvlTable').innerHTML=`<tr><th>Level</th><th>Depth (plies)</th><th>Evaluation</th><th>Time</th><th>Mistakes</th></tr>${rows}<tr><td colspan="5" class="muted">All levels use alpha-beta pruning and move ordering. Custom lets you turn each one off to feel the difference.</td></tr>`;
 }
 
+/* ---------- Firebase online multiplayer ---------- */
+const firebaseConfig={
+  apiKey:"AIzaSyDWNpcNttQlInwB_8AtkbmR2t1P3A64T0o",
+  authDomain:"alpha-beta-arena.firebaseapp.com",
+  databaseURL:"https://alpha-beta-arena-default-rtdb.firebaseio.com",
+  projectId:"alpha-beta-arena",
+  storageBucket:"alpha-beta-arena.firebasestorage.app",
+  messagingSenderId:"818954866908",
+  appId:"1:818954866908:web:4ee91cca1d4d4234932419",
+  measurementId:"G-86H0SZ9Q5T"
+};
+let fbReady=false;
+function onlineMsg(t){const el=$('#onlineMessage');if(el)el.textContent=t;}
+async function ensureFirebase(){
+  if(!window.firebase){onlineMsg('Firebase SDK could not load. Check your internet connection.');throw Error('Firebase SDK unavailable');}
+  if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+  if(!fbReady){await firebase.auth().signInAnonymously();S.onlineUid=firebase.auth().currentUser.uid;fbReady=true;}
+  return firebase.database();
+}
+function makeRoomCode(){return Math.random().toString(36).slice(2,8).toUpperCase().padEnd(6,'X');}
+function roomStateFromData(d){
+  S.cells=Array.isArray(d.cells)?d.cells:new Array(42).fill(0);
+  S.history=(d.moves||[]).map(m=>({col:m.col,p:m.p,idx:m.idx}));
+  S.turn=d.turn||HUMAN;S.over=d.over||null;S.phase='playing';S.busy=false;S.animIdx=-1;
+  const last=S.history[S.history.length-1];S.lastIdx=last?last.idx:-1;
+  renderAll();
+  if(S.over)$('#why').innerHTML='<div class="why-empty"><h3>'+(S.over.type==='draw'?'Game drawn':(S.over.p===S.onlinePlayer?'You win!':'Your opponent wins!'))+'</h3><p>Online game finished.</p></div>';
+}
+function watchOnlineRoom(room){
+  if(S.onlineUnsub)S.onlineUnsub();
+  S.onlineRef=firebase.database().ref('rooms/'+room);
+  const cb=snap=>{
+    if(!snap.exists()){onlineMsg('This room no longer exists.');return;}
+    const d=snap.val();
+    if(d.status==='waiting')onlineMsg('Room '+room+' created. Waiting for the second player… Share the code.');
+    else if(d.status==='playing')onlineMsg('Opponent connected. Game is ready!');
+    if(d.status==='playing'||d.status==='finished')roomStateFromData(d);
+    if(d.status==='closed')onlineMsg('The other player has left this room.');
+    if(d.status==='finished')onlineMsg('Game finished. '+(d.over?.type==='draw'?'It is a draw.':(d.over?.p===S.onlinePlayer?'You won!':'Your opponent won.')));
+  };
+  S.onlineRef.on('value',cb);S.onlineUnsub=()=>S.onlineRef.off('value',cb);
+}
+async function createOnlineRoom(){
+  try{
+    const db=await ensureFirebase();let room,ref,created=false;
+    for(let i=0;i<8&&!created;i++){room=makeRoomCode();ref=db.ref('rooms/'+room);const result=await ref.transaction(cur=>cur===null?{host:S.onlineUid,guest:null,status:'waiting',cells:new Array(42).fill(0),moves:[],turn:1,over:null,createdAt:firebase.database.ServerValue.TIMESTAMP}:undefined);created=result.committed;}
+    if(!created)throw Error('Could not reserve a room code. Please try again.');
+    S.onlineRoom=room;S.onlinePlayer=HUMAN;S.mode='online';S.phase='playing';S.first='human';
+    resetBoard();S.phase='playing';$('#panelSetup').hidden=true;$('#panelGame').hidden=false;$('#metaLevel').textContent='Online multiplayer';$('#metaFirst').textContent='You are Coral (Red)';
+    watchOnlineRoom(room);renderAll();onlineMsg('Room '+room+' created. Waiting for the second player…');
+  }catch(e){onlineMsg(e.message||'Could not create room. Check Firebase setup and database rules.');}
+}
+async function joinOnlineRoom(){
+  const room=$('#roomCodeInput').value.trim().toUpperCase();
+  if(!/^[A-Z0-9]{6}$/.test(room)){onlineMsg('Enter a valid 6-character room code.');return;}
+  try{
+    const db=await ensureFirebase(),ref=db.ref('rooms/'+room);let joined=false;
+    const result=await ref.transaction(cur=>{if(!cur||cur.host===S.onlineUid||cur.guest||cur.status!=='waiting')return;cur.guest=S.onlineUid;cur.status='playing';return cur;});
+    joined=result.committed;
+    if(!joined)throw Error('Room not found, already full, or no longer waiting. Check the code.');
+    S.onlineRoom=room;S.onlinePlayer=AI;S.mode='online';S.first='human';S.phase='playing';
+    $('#panelSetup').hidden=true;$('#panelGame').hidden=false;$('#metaLevel').textContent='Online multiplayer';$('#metaFirst').textContent='You are Gold (Yellow)';
+    watchOnlineRoom(room);renderAll();onlineMsg('Joined room '+room+'. You are Gold (Yellow).');
+  }catch(e){onlineMsg(e.message||'Could not join room. Check Firebase setup and database rules.');}
+}
+async function submitOnlineMove(col){
+  if(!S.onlineRef||S.onlineBusy||S.over)return;
+  S.onlineBusy=true;renderAll();
+  try{
+    const result=await S.onlineRef.transaction(d=>{
+      if(!d||d.status!=='playing'||d.turn!==S.onlinePlayer||d.over)return;
+      const cells=d.cells||new Array(42).fill(0),moves=d.moves||[];
+      let row=5;while(row>=0&&cells[row*7+col]!==0)row--;
+      if(row<0)return;
+      const idx=row*7+col;cells[idx]=S.onlinePlayer;moves.push({col,p:S.onlinePlayer,idx});
+      const line=winLine(cells,idx,S.onlinePlayer);
+      const over=line?{type:'win',p:S.onlinePlayer,line}:(moves.length===42?{type:'draw'}:null);
+      d.cells=cells;d.moves=moves;d.over=over;d.turn=3-S.onlinePlayer;if(over)d.status='finished';
+      return d;
+    });
+    if(!result.committed)onlineMsg('Not your turn, or that column is full.');
+  }catch(e){onlineMsg('Move could not sync: '+e.message);}
+  finally{S.onlineBusy=false;renderAll();}
+}
+async function leaveOnlineRoom(){
+  if(S.onlineUnsub)S.onlineUnsub();
+  if(S.onlineRef){try{await S.onlineRef.transaction(d=>{if(!d)return d;if(d.host===S.onlineUid||d.guest===S.onlineUid)d.status='closed';return d;});}catch(e){}}
+  S.onlineRoom=null;S.onlineRef=null;S.onlineUnsub=null;S.onlinePlayer=0;S.mode='ai';S.phase='setup';resetBoard();
+  $('#panelSetup').hidden=false;$('#panelGame').hidden=true;$('#onlineGameInfo').hidden=true;
+  $$('#modeSeg button').forEach(b=>{const active=b.dataset.mode==='ai';b.setAttribute('aria-checked',active?'true':'false');});
+  $('#difficultyStep').hidden=false;$('#firstSeg').parentElement.hidden=false;$('#onlineSetup').hidden=true;$('#startBtn').hidden=false;
+  renderAll();onlineMsg('You left the online room.');
+}
+
 /* ---------- wiring ---------- */
 function init(){
   buildBoard();renderLevels();fillLevelTable();renderWhyEmpty();syncCustom();setupTheme();
   $('#levels').addEventListener('click',e=>{const b=e.target.closest('[data-level]');if(!b)return;S.level=b.dataset.level;renderLevels();});
-  $('#modeSeg').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;S.mode=b.dataset.mode;$$('#modeSeg button').forEach(x=>x.setAttribute('aria-checked',x===b));$('#difficultyStep').hidden=S.mode!=='ai';const fs=$$('#firstSeg button');fs[0].innerHTML='<span class="pip p1"></span>'+(S.mode==='human'?'Player 1':'You');fs[1].innerHTML='<span class="pip p2"></span>'+(S.mode==='human'?'Player 2':'The AI');});
+  $('#modeSeg').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;S.mode=b.dataset.mode;$$('#modeSeg button').forEach(x=>x.setAttribute('aria-checked',x===b));$('#difficultyStep').hidden=S.mode!=='ai';$('#firstSeg').parentElement.hidden=S.mode==='online';$('#onlineSetup').hidden=S.mode!=='online';$('#startBtn').hidden=S.mode==='online';const fs=$$('#firstSeg button');fs[0].innerHTML='<span class="pip p1"></span>'+(S.mode==='human'?'Player 1':'You');fs[1].innerHTML='<span class="pip p2"></span>'+(S.mode==='human'?'Player 2':'The AI');});
   $('#firstSeg').addEventListener('click',e=>{const b=e.target.closest('[data-first]');if(!b)return;S.first=b.dataset.first;
     $$('#firstSeg button').forEach(x=>x.setAttribute('aria-checked',x===b));});
   ['cDepth','cAb','cOrder','cId','cEval'].forEach(id=>$('#'+id).addEventListener('input',syncCustom));
@@ -1040,6 +1153,7 @@ function init(){
     }else{soundEnabled=false;$('#soundBtn').textContent='Sound: Off';$('#soundBtn').setAttribute('aria-pressed','false');}
   });
   $('#startBtn').addEventListener('click',startGame);
+  $('#createRoomBtn').addEventListener('click',createOnlineRoom);$('#joinRoomBtn').addEventListener('click',joinOnlineRoom);$('#leaveRoomBtn').addEventListener('click',leaveOnlineRoom);$('#copyRoomBtn').addEventListener('click',()=>{if(S.onlineRoom)navigator.clipboard?.writeText(S.onlineRoom).then(()=>onlineMsg('Room code copied.')).catch(()=>onlineMsg('Room code: '+S.onlineRoom));});
   $('#overlay').addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(!a)return;
     if(a.dataset.act==='start'||a.dataset.act==='again')startGame();else toSetup();});
   $('#hintBtn').addEventListener('click',doHint);$('#undoBtn').addEventListener('click',undo);$('#newBtn').addEventListener('click',toSetup);
