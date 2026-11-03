@@ -1218,11 +1218,32 @@ async function joinOnlineRoom() {
       return current;
     });
 
-    if (!result.committed) {
-      throw new Error(
-        'ROOM_UNAVAILABLE: Another player may have joined this room.'
-      );
-    }
+if (!result.committed) {
+  const check = await ref.once('value');
+  const latest = check.val();
+
+  console.log('ROOM JOIN DEBUG:', latest);
+
+  if (!latest) {
+    throw new Error('DEBUG: Room does not exist in Firebase.');
+  }
+
+  if (latest.status !== 'waiting') {
+    throw new Error('DEBUG: Room status is ' + latest.status);
+  }
+
+  if (latest.guest) {
+    throw new Error('DEBUG: Room already has a guest: ' + latest.guest);
+  }
+
+  if (latest.host === S.onlineUid) {
+    throw new Error('DEBUG: You are trying to join your own room.');
+  }
+
+  throw new Error(
+    'DEBUG: Transaction failed. Check Firebase database rules.'
+  );
+}
 
     // Successfully joined.
     S.onlineRoom = room;
