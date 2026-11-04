@@ -1279,25 +1279,61 @@ async function joinOnlineRoom() {
   }
 }
 async function submitOnlineMove(col){
-  if(!S.onlineRef||S.onlineBusy||S.over)return;
-  S.onlineBusy=true;renderAll();
-  try{
-    const result=await S.onlineRef.transaction(d=>{
-      if(d===null)return d; /* empty local cache: let Firebase retry with the server value */
-      if(d.status!=='playing'||d.turn!==S.onlinePlayer||d.over)return;
-      const cells=d.cells||new Array(42).fill(0),moves=d.moves||[];
-      let row=5;while(row>=0&&cells[row*7+col]!==0)row--;
-      if(row<0)return;
-      const idx=row*7+col;cells[idx]=S.onlinePlayer;moves.push({col,p:S.onlinePlayer,idx});
-      const line=winLine(cells,idx,S.onlinePlayer);
-      const over=line?{type:'win',p:S.onlinePlayer,line}:(moves.length===42?{type:'draw'}:null);
-      d.cells=cells;d.moves=moves;d.over=over;d.turn=3-S.onlinePlayer;if(over)d.status='finished';
-      return d;
-    },undefined,false);
-    if(!result.committed)onlineMsg('Not your turn, or that column is full.');
-  }catch(e){onlineMsg('Move could not sync: '+e.message);}
-  finally{S.onlineBusy=false;renderAll();}
+if(!S.onlineRef||S.onlineBusy||S.over)return;
+
+S.onlineBusy=true;
+renderAll();
+
+try{
+const result=await S.onlineRef.transaction(d=>{
+if(!d||d.status!=='playing'||d.turn!==S.onlinePlayer||d.over)return;
+
+
+  const cells=d.cells||new Array(42).fill(0);
+  const moves=d.moves||[];
+
+  // Start from the bottom row (row 0).
+  let row=0;
+  while(row<6&&cells[row*7+col]!==0)row++;
+
+  // Reject a full column.
+  if(row>=6)return;
+
+  const idx=row*7+col;
+
+  cells[idx]=S.onlinePlayer;
+  moves.push({col,p:S.onlinePlayer,idx});
+
+  const line=winLine(cells,idx,S.onlinePlayer);
+
+  const over=line
+    ? {type:'win',p:S.onlinePlayer,line}
+    : (moves.length===42?{type:'draw'}:null);
+
+  d.cells=cells;
+  d.moves=moves;
+  d.over=over;
+  d.turn=3-S.onlinePlayer;
+
+  if(over)d.status='finished';
+
+  return d;
+});
+
+if(!result.committed){
+  onlineMsg('Not your turn, or that column is full.');
 }
+
+
+}catch(e){
+onlineMsg('Move could not sync: '+e.message);
+}
+finally{
+S.onlineBusy=false;
+renderAll();
+}
+}
+
 async function leaveOnlineRoom(){
   if(S.onlineUnsub)S.onlineUnsub();
   if(S.onlineRef){try{await S.onlineRef.transaction(d=>{if(!d)return d;if(d.host===S.onlineUid||d.guest===S.onlineUid)d.status='closed';return d;});}catch(e){}}
