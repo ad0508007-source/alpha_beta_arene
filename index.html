@@ -648,7 +648,7 @@ const HINT_CFG={depth:12,ab:true,order:'smart',id:true,timeMs:900,eval:'adv'};
 
 /* ---------- state ---------- */
 const S={phase:'setup',mode:'ai',hintsLeft:3,undoUsed:0,level:'skilled',first:'human',cells:new Array(42).fill(0),turn:HUMAN,history:[],busy:false,
-  over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0,onlineRoom:null,onlineRef:null,onlineUid:null,onlinePlayer:0,onlineUnsub:null,onlineBusy:false};
+  over:null,animIdx:-1,lastIdx:-1,hintCol:-1,hover:-1,cfgUsed:null,levelUsed:null,gameId:0,onlineRoom:null,onlineStatus:null,onlineRef:null,onlineUid:null,onlinePlayer:0,onlineUnsub:null,onlineBusy:false};
 function customCfg(){
   const id=$('#cId').checked;
   return{depth:+$('#cDepth').value,ab:$('#cAb').checked,order:$('#cOrder').checked?'smart':'none',id,timeMs:id?1500:0,eval:$('#cEval').value};
@@ -691,8 +691,9 @@ function discSVG(p,cx,cy,cls,extra){
 }
 function drawGhost(){
   const g=$('#ghost');
-  if(S.phase==='playing'&&S.turn===HUMAN&&!S.busy&&!S.over&&S.hover>=0&&rowOf(S.cells,S.hover)<6)
-    g.innerHTML=discSVG(HUMAN,S.hover*100+50,-45);
+  const me=S.mode==='online'?S.onlinePlayer:HUMAN;
+  if(S.phase==='playing'&&S.turn===me&&(S.mode!=='online'||S.onlineStatus==='playing')&&!S.busy&&!S.over&&S.hover>=0&&rowOf(S.cells,S.hover)<6)
+    g.innerHTML=discSVG(me,S.hover*100+50,-45);
   else g.innerHTML='';
 }
 function renderDiscs(){
@@ -725,8 +726,12 @@ function syncCustom(){
 function setStatus(){
   const st=$('#status'),ns=$('#nextstep');let msg='',chip='',next='';
   if(S.phase==='setup'){msg='Ready when you are';chip='<span class="chip p1"></span>';next='<b>Next</b><span>Pick a difficulty and who moves first, then press <b style="color:var(--fg)">Start game</b>.</span>';}
+  else if(S.mode==='online'&&!S.over&&S.onlineStatus==='waiting'){msg='Waiting for your friend…';chip='<span class="spinner"></span>';next='<b>Share this code</b><span>Room code <b style="color:var(--fg);letter-spacing:.12em">'+S.onlineRoom+'</b>. Your friend picks Online Multiplayer, types it in and presses Join room.</span>';}
+  else if(S.mode==='online'&&!S.over&&S.onlineStatus==='closed'){msg='Your opponent left the room';chip='<span class="chip" style="background:var(--muted)"></span>';next='<b>Next</b><span>Press Leave, then create or join a new room.</span>';}
+  else if(S.mode==='online'&&!S.over){const mine=S.turn===S.onlinePlayer;msg=mine?'Your turn':'Opponent\'s turn';chip='<span class="chip p'+S.turn+'"></span>';next=mine?'<b>Your move</b><span>Click a column or press <kbd>1</kbd>–<kbd>7</kbd>.</span>':'<b>Wait</b><span>Your opponent is choosing a column.</span>';}
   else if(S.over){
-    if(S.over.type==='draw'){msg='Draw. The board is full.';chip='<span class="chip" style="background:var(--muted)"></span>';}
+    if(S.mode==='online'&&S.over.type==='win'){const me=S.over.p===S.onlinePlayer;msg=me?'You win!':'Your opponent wins.';chip='<span class="chip p'+S.over.p+'"></span>';next='<b>Next</b><span>Press Leave to go back and start a new room.</span>';}
+    else if(S.over.type==='draw'){msg='Draw. The board is full.';chip='<span class="chip" style="background:var(--muted)"></span>';}
     else if(S.over.p===HUMAN){msg=S.mode==='human'?'Player 1 wins!':'You win!';chip='<span class="chip p1"></span>';}
     else{msg=S.mode==='human'?'Player 2 wins!':'The AI wins.';chip='<span class="chip p2"></span>';}
     next='<b>Next</b><span>Read the AI\'s last reasoning on the right, then play again.</span>';
@@ -741,8 +746,8 @@ function setOverlay(){
   if(S.phase==='setup'){
     o.hidden=false;o.innerHTML=`<div class="box"><h2>Drop four in a row</h2><p class="muted">Pick a difficulty on the right, then start. The defaults are ready to go.</p><button class="btn primary" type="button" data-act="start">Start game</button></div>`;
   }else if(S.over){
-    const t=S.over.type==='draw'?'A draw':S.mode==='human'?(S.over.p===HUMAN?'Player 1 wins!':'Player 2 wins!'):(S.over.p===HUMAN?'You won':'The AI won');
-    o.hidden=false;o.innerHTML=`${S.over.type==='win'?'<div class="win-celebration">'+Array.from({length:34},(_,i)=>`<i class="confetti" style="--x:${(i*37)%100}%;--h:${(i*47)%360};--dur:${2.4+(i%7)*.22}s;--delay:${(i%9)*-.31}s;--drift:${((i*13)%180)-90}px;--rot:${i*19}deg"></i>`).join('')+'</div>':''}<div class="box"><h2>${t}</h2><p class="muted">${S.history.length} moves played.</p><div class="btnrow" style="justify-content:center"><button class="btn primary" type="button" data-act="again">Play again</button><button class="btn" type="button" data-act="setup">Change settings</button></div></div>`;
+    const t=S.over.type==='draw'?'A draw':S.mode==='online'?(S.over.p===S.onlinePlayer?'You won':'Your opponent won'):S.mode==='human'?(S.over.p===HUMAN?'Player 1 wins!':'Player 2 wins!'):(S.over.p===HUMAN?'You won':'The AI won');
+    o.hidden=false;o.innerHTML=`${S.over.type==='win'?'<div class="win-celebration">'+Array.from({length:34},(_,i)=>`<i class="confetti" style="--x:${(i*37)%100}%;--h:${(i*47)%360};--dur:${2.4+(i%7)*.22}s;--delay:${(i%9)*-.31}s;--drift:${((i*13)%180)-90}px;--rot:${i*19}deg"></i>`).join('')+'</div>':''}<div class="box"><h2>${t}</h2><p class="muted">${S.history.length} moves played.</p><div class="btnrow" style="justify-content:center">${S.mode==='online'?'<button class="btn primary" type="button" data-act="leave">Leave room</button>':'<button class="btn primary" type="button" data-act="again">Play again</button><button class="btn" type="button" data-act="setup">Change settings</button>'}</div></div>`;
     // let the winning line show before the overlay covers it
     o.style.opacity='0';o.style.transition='opacity .4s .9s';$('#board').classList.add('win-celebrate');requestAnimationFrame(()=>o.style.opacity='1');
   }else{o.hidden=true;o.style.opacity='';o.style.transition='';$('#board').classList.remove('win-celebrate');}
@@ -758,6 +763,8 @@ function renderAll(){
   $('#undoCount').textContent=undoLeft+' left';
   $('#undoBtn').disabled=!(S.phase==='playing'&&!S.busy&&!S.over&&S.history.length>0&&undoLeft>0&&S.mode!=='online');
   $('#onlineGameInfo').hidden=S.mode!=='online'||!S.onlineRoom;
+  const on=S.mode==='online'&&!!S.onlineRoom;
+  $('#hintBtn').hidden=on;$('#undoBtn').hidden=on;$('#panelGame .how-list').hidden=on;$('#why').hidden=on;
   if(S.onlineRoom){$('#activeRoomCode').textContent=S.onlineRoom;$('#onlinePlayerLabel').textContent=S.onlinePlayer===HUMAN?'You are Coral (Red)':'You are Gold (Yellow)';}
 }
 function renderWhyEmpty(){
@@ -795,7 +802,7 @@ async function onColumn(c){
   if(S.phase!=='playing'||S.busy||S.over||rowOf(S.cells,c)>=6)return;
   const player=S.turn;
   if(S.mode==='ai'&&player!==HUMAN)return;
-  if(S.mode==='online'){await submitOnlineMove(c);return;}
+  if(S.mode==='online'){if(S.onlineStatus!=='playing'){onlineMsg('Waiting for the second player to join.');return;}await submitOnlineMove(c);return;}
   applyMove(c,player);renderAll();
   if(!S.over&&S.mode==='ai')await aiMove();
 }
@@ -1077,11 +1084,12 @@ function watchOnlineRoom(room){
   S.onlineRef=firebase.database().ref('rooms/'+room);
   const cb=snap=>{
     if(!snap.exists()){onlineMsg('This room no longer exists.');return;}
-    const d=snap.val();
+    const d=snap.val();S.onlineStatus=d.status;
     if(d.status==='waiting')onlineMsg('Room '+room+' created. Waiting for the second player… Share the code.');
     else if(d.status==='playing')onlineMsg('Opponent connected. Game is ready!');
     if(d.status==='playing'||d.status==='finished')roomStateFromData(d);
     if(d.status==='closed')onlineMsg('The other player has left this room.');
+    if(d.status==='waiting'||d.status==='closed')renderAll();
     if(d.status==='finished')onlineMsg('Game finished. '+(d.over?.type==='draw'?'It is a draw.':(d.over?.p===S.onlinePlayer?'You won!':'Your opponent won.')));
   };
   S.onlineRef.on('value',cb);S.onlineUnsub=()=>S.onlineRef.off('value',cb);
@@ -1134,8 +1142,10 @@ function watchOnlineRoom(room){
 
     resetBoard();
     S.phase = 'playing';
+    S.onlineStatus = 'waiting';
 
     watchOnlineRoom(room);
+    renderAll();
 
     onlineMsg(
       'Room created successfully! Your room code is ' +
@@ -1173,7 +1183,7 @@ async function joinOnlineRoom() {
 
     if (!snapshot.exists()) {
       throw new Error(
-        'ROOM_NOT_FOUND: This room does not exist. Ask the host to create a new room.'
+        'This room does not exist. Check the code or ask the host to create a new room.'
       );
     }
 
@@ -1189,20 +1199,23 @@ async function joinOnlineRoom() {
     // Check whether another player has already joined.
     if (roomData.guest) {
       throw new Error(
-        'ROOM_FULL: This room already has two players.'
+        'This room already has two players.'
       );
     }
 
     if (roomData.status !== 'waiting') {
       throw new Error(
-        'ROOM_CLOSED: This room is no longer waiting for a player.'
+        'This room is no longer waiting for a player.'
       );
     }
 
     // Claim the empty guest position atomically.
     const result = await ref.transaction(current => {
 
-      if (!current) return;
+      // The first run uses the local cache, which is empty (null) for a room we have not
+      // listened to yet. Returning undefined would abort before Firebase fetches the real
+      // data, so return null here; Firebase then retries with the server's value.
+      if (current === null) return current;
 
       if (
         current.status !== 'waiting' ||
@@ -1216,34 +1229,17 @@ async function joinOnlineRoom() {
       current.status = 'playing';
 
       return current;
-    });
+    }, undefined, false);
 
-if (!result.committed) {
-  const check = await ref.once('value');
-  const latest = check.val();
-
-  console.log('ROOM JOIN DEBUG:', latest);
-
-  if (!latest) {
-    throw new Error('DEBUG: Room does not exist in Firebase.');
-  }
-
-  if (latest.status !== 'waiting') {
-    throw new Error('DEBUG: Room status is ' + latest.status);
-  }
-
-  if (latest.guest) {
-    throw new Error('DEBUG: Room already has a guest: ' + latest.guest);
-  }
-
-  if (latest.host === S.onlineUid) {
-    throw new Error('DEBUG: You are trying to join your own room.');
-  }
-
-  throw new Error(
-    'DEBUG: Transaction failed. Check Firebase database rules.'
-  );
-}
+    if (!result.committed) {
+      // Someone else took the seat first, or the room changed while we were joining.
+      const latest = (await ref.once('value')).val();
+      if (!latest) throw new Error('This room no longer exists. Ask the host to create a new one.');
+      if (latest.guest && latest.guest !== S.onlineUid) throw new Error('This room already has two players.');
+      if (latest.host === S.onlineUid) throw new Error('You cannot join your own room. Use another device or browser.');
+      if (latest.status !== 'waiting') throw new Error('This room is no longer waiting for a player.');
+      throw new Error('Could not join the room. Please try again.');
+    }
 
     // Successfully joined.
     S.onlineRoom = room;
@@ -1258,7 +1254,10 @@ if (!result.committed) {
     $('#metaLevel').textContent = 'Online Multiplayer';
     $('#metaFirst').textContent = 'You are Gold (Yellow)';
 
+    S.onlineStatus = 'playing';
+    resetBoard();
     watchOnlineRoom(room);
+    renderAll();
 
     onlineMsg(
       'Successfully joined room ' +
@@ -1284,7 +1283,8 @@ async function submitOnlineMove(col){
   S.onlineBusy=true;renderAll();
   try{
     const result=await S.onlineRef.transaction(d=>{
-      if(!d||d.status!=='playing'||d.turn!==S.onlinePlayer||d.over)return;
+      if(d===null)return d; /* empty local cache: let Firebase retry with the server value */
+      if(d.status!=='playing'||d.turn!==S.onlinePlayer||d.over)return;
       const cells=d.cells||new Array(42).fill(0),moves=d.moves||[];
       let row=5;while(row>=0&&cells[row*7+col]!==0)row--;
       if(row<0)return;
@@ -1293,7 +1293,7 @@ async function submitOnlineMove(col){
       const over=line?{type:'win',p:S.onlinePlayer,line}:(moves.length===42?{type:'draw'}:null);
       d.cells=cells;d.moves=moves;d.over=over;d.turn=3-S.onlinePlayer;if(over)d.status='finished';
       return d;
-    });
+    },undefined,false);
     if(!result.committed)onlineMsg('Not your turn, or that column is full.');
   }catch(e){onlineMsg('Move could not sync: '+e.message);}
   finally{S.onlineBusy=false;renderAll();}
@@ -1301,7 +1301,7 @@ async function submitOnlineMove(col){
 async function leaveOnlineRoom(){
   if(S.onlineUnsub)S.onlineUnsub();
   if(S.onlineRef){try{await S.onlineRef.transaction(d=>{if(!d)return d;if(d.host===S.onlineUid||d.guest===S.onlineUid)d.status='closed';return d;});}catch(e){}}
-  S.onlineRoom=null;S.onlineRef=null;S.onlineUnsub=null;S.onlinePlayer=0;S.mode='ai';S.phase='setup';resetBoard();
+  S.onlineRoom=null;S.onlineStatus=null;S.onlineRef=null;S.onlineUnsub=null;S.onlinePlayer=0;S.mode='ai';S.phase='setup';resetBoard();renderWhyEmpty();$('#why').hidden=false;
   $('#panelSetup').hidden=false;$('#panelGame').hidden=true;$('#onlineGameInfo').hidden=true;
   $$('#modeSeg button').forEach(b=>{const active=b.dataset.mode==='ai';b.setAttribute('aria-checked',active?'true':'false');});
   $('#difficultyStep').hidden=false;$('#firstSeg').parentElement.hidden=false;$('#onlineSetup').hidden=true;$('#startBtn').hidden=false;
@@ -1325,8 +1325,8 @@ function init(){
   $('#startBtn').addEventListener('click',startGame);
   $('#createRoomBtn').addEventListener('click',createOnlineRoom);$('#joinRoomBtn').addEventListener('click',joinOnlineRoom);$('#leaveRoomBtn').addEventListener('click',leaveOnlineRoom);$('#copyRoomBtn').addEventListener('click',()=>{if(S.onlineRoom)navigator.clipboard?.writeText(S.onlineRoom).then(()=>onlineMsg('Room code copied.')).catch(()=>onlineMsg('Room code: '+S.onlineRoom));});
   $('#overlay').addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(!a)return;
-    if(a.dataset.act==='start'||a.dataset.act==='again')startGame();else toSetup();});
-  $('#hintBtn').addEventListener('click',doHint);$('#undoBtn').addEventListener('click',undo);$('#newBtn').addEventListener('click',toSetup);
+    if(a.dataset.act==='leave')leaveOnlineRoom();else if(a.dataset.act==='start'||a.dataset.act==='again')startGame();else toSetup();});
+  $('#hintBtn').addEventListener('click',doHint);$('#undoBtn').addEventListener('click',undo);$('#newBtn').addEventListener('click',()=>{if(S.mode==='online'&&S.onlineRoom)leaveOnlineRoom();else toSetup();});
   $('#labRun').addEventListener('click',runLab);$('#duelRun').addEventListener('click',runDuel);
   $('#labDepth').addEventListener('input',e=>$('#labDepthV').textContent=e.target.value);
   $('#duelDepth').addEventListener('input',e=>$('#duelDepthV').textContent=e.target.value);
